@@ -1,5 +1,10 @@
-## PIOFirstRun
+### PIOFirstRun
 
+## Gib Libs einbinden
+
+- [ ] Config finden
+
+https://docs.platformio.org/en/latest/projectconf/section_env_library.html#lib-deps -> hier weiter
 
 ## Git inital
 
@@ -17,3 +22,16 @@ $ git commit -m "Erstes Commit"
 git remote add origin https://github.com/USER/REPO.git 
 
 git push -u origin master
+
+##Build 
+
+# Serial
+
+COM3 -> USB Flashen
+
+# OTA Update
+
+- [ ] OTA Update finden
+- [ ] OTA Update configurieren 
+- [ ] OTA Update testen
+- [ ] OTA Update dokumentieren
