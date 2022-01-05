@@ -6,7 +6,8 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 
-
+#include <EspMultiLogger.h>
+#include "WlanConfig.h"
 /*
 Configuration
 */
@@ -41,6 +42,8 @@ void setup() {
   Serial.println("Starting Telnet server");
   TelnetServer.begin();
   TelnetServer.setNoDelay(true);
+
+  EspMultiLogger Logger = new EspMultiLogger(Debug);
 }
 
 void loop() {
