@@ -5,17 +5,18 @@
 - [x] Config finden
 
 https://docs.platformio.org/en/latest/projectconf/section_env_library.html#lib-deps -> hier weiter
- - [ ] lib json correctness
+ - [x] lib json correctness 
+    -> seems only work with platform IO repos -> manual integration in libs folder does work
 ## Git inital
 
 http://fseitz.de/blog/index.php?/archives/149-Git-Ein-lokales-Verzeichnis-auf-GitHub-veroeffentlichen.html
 
-Git Beginner
+# Git Beginner
 git init
-$ git add .
-$ git commit -m "Erstes Commit"
+git add .
+git commit -m "Erstes Commit"
 
-# New  Repo on github.com
+New  Repo on github.com
 
 # upload
 
