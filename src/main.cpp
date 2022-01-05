@@ -43,7 +43,9 @@ void setup() {
   TelnetServer.begin();
   TelnetServer.setNoDelay(true);
 
-  EspMultiLogger Logger = new EspMultiLogger(Debug);
+  EspMultiLogger* Logger = new EspMultiLogger(Debug);
+
+  EspMultiLogger::initLogger();
 }
 
 void loop() {
