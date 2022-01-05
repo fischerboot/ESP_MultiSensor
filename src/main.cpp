@@ -4,19 +4,12 @@
 *********/
 
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
-
 #include <EspMultiLogger.h>
 #include "WlanConfig.h"
 /*
 Configuration
 */
-const char* versionStr = "20220104v0.2";
-#define LoggingWithTimeout
-
-#ifdef LoggingWithTimeout
-#define logTimeout (1800) // 60 min * 60sec = 1 std
-#endif 
+const char* versionStr = "20220105v0.3";
 
 #define LED 2
 
@@ -27,11 +20,6 @@ const char* versionStr = "20220104v0.2";
 const char* ssid = STASSID;
 const char* password = STAPSK;
 
-#define MAX_TELNET_CLIENTS 2
-
-WiFiServer TelnetServer(23);
-WiFiClient TelnetClient[MAX_TELNET_CLIENTS];
-
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -39,12 +27,8 @@ void setup() {
   Serial.println(versionStr);
   pinMode(LED, OUTPUT);
 
-  Serial.println("Starting Telnet server");
-  TelnetServer.begin();
-  TelnetServer.setNoDelay(true);
-
   EspMultiLogger* Logger = new EspMultiLogger(Debug);
-
+  Logger->setLogLevel(Debug);
   EspMultiLogger::initLogger();
 }
 
