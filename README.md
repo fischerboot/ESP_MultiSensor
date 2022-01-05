@@ -2,10 +2,10 @@
 
 ## Gib Libs einbinden
 
-- [ ] Config finden
+- [x] Config finden
 
 https://docs.platformio.org/en/latest/projectconf/section_env_library.html#lib-deps -> hier weiter
-
+ - [ ] lib json correctness
 ## Git inital
 
 http://fseitz.de/blog/index.php?/archives/149-Git-Ein-lokales-Verzeichnis-auf-GitHub-veroeffentlichen.html
@@ -19,11 +19,10 @@ $ git commit -m "Erstes Commit"
 
 # upload
 
-git remote add origin https://github.com/USER/REPO.git 
+- git remote add origin https://github.com/USER/REPO.git 
+- git push -u origin master
 
-git push -u origin master
-
-##Build 
+## Build 
 
 # Serial
 
