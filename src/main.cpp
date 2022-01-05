@@ -20,6 +20,8 @@ const char* versionStr = "20220105v0.3";
 const char* ssid = STASSID;
 const char* password = STAPSK;
 
+EspMultiLogger* Logger;
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -27,17 +29,24 @@ void setup() {
   Serial.println(versionStr);
   pinMode(LED, OUTPUT);
 
-  EspMultiLogger* Logger = new EspMultiLogger(Debug);
+  Logger = new EspMultiLogger(Debug);
   Logger->setLogLevel(Debug);
   EspMultiLogger::initLogger();
 }
 
 void loop() {
+  bool on = true;
+  EspMultiLogger::loopLogger();
   // put your main code here, to run repeatedly:
-  digitalWrite(LED, HIGH);
-  Serial.println("LED is on");
-  delay(1000);
-  digitalWrite(LED, LOW);
-  Serial.println("LED is off");
-  delay(1000);
+  if(millis()%1000==0){
+    if(on == true){
+      on = false;
+      digitalWrite(LED, HIGH);
+      Logger->println("LED is on");
+    }else{
+      on = true;
+      digitalWrite(LED, LOW);
+      Logger->println("LED is off");
+    }
+  }
 }
