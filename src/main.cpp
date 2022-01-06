@@ -41,7 +41,7 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   Logger = new EspMultiLogger(Debug);
-  Logger->setLogLevel(Debug);
+  EspMultiLogger::setLogLevel(Debug);
   EspMultiLogger::initLogger();
 
   // OTA Begin

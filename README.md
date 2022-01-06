@@ -31,7 +31,7 @@ COM3 -> USB Flashen
 
 # OTA Update
 
-- [ ] OTA Update finden
-- [ ] OTA Update configurieren 
-- [ ] OTA Update testen
-- [ ] OTA Update dokumentieren
+- [x] OTA Update finden
+- [x] OTA Update configurieren 
+- [x] OTA Update testen
+- [x] OTA Update dokumentieren
