@@ -21,7 +21,8 @@ const char* versionStr = "20220105v0.4";
 const char* ssid = STASSID;
 const char* password = STAPSK;
 
-EspMultiLogger* Logger;
+EspMultiLogger* InfoLogger;
+EspMultiLogger* DebugLogger;
 bool on = true;
 void setup() {
   // put your setup code here, to run once:
@@ -40,7 +41,8 @@ void setup() {
   Serial.print("local ip: ");
   Serial.println(WiFi.localIP());
 
-  Logger = new EspMultiLogger(Debug);
+  InfoLogger = new EspMultiLogger(Info);
+  DebugLogger = new EspMultiLogger(Debug);
   EspMultiLogger::setLogLevel(Debug);
   EspMultiLogger::initLogger();
 
@@ -68,26 +70,26 @@ void setup() {
     }
 
     // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-    Serial.println("Start updating " + type);
+    InfoLogger->println("Start updating " + type);
   });
   ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
+    InfoLogger->println("\nEnd");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    InfoLogger->printf("Progress: %u%%\r", (progress / (total / 100)));
   });
   ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
+    InfoLogger->printf("Error[%u]: ", error);
     if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
+      InfoLogger->println("Auth Failed");
     } else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
+      InfoLogger->println("Begin Failed");
     } else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
+      InfoLogger->println("Connect Failed");
     } else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
+      InfoLogger->println("Receive Failed");
     } else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
+      InfoLogger->println("End Failed");
     }
   });
   ArduinoOTA.begin();
@@ -104,11 +106,11 @@ void loop() {
     if(on == true){
       on = false;
       digitalWrite(LED, HIGH);
-      Logger->println("LED is on");
+      InfoLogger->println("LED is on");
     }else{
       on = true;
       digitalWrite(LED, LOW);
-      Logger->println("LED is off");
+      InfoLogger->println("LED is off");
     }
   }
 }
