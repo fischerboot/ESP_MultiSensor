@@ -10,7 +10,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20250920v0.1";
+const char* versionStr = "20250920v0.2";
 
 #define LED 2
 
@@ -107,6 +107,7 @@ void loop() {
       on = false;
       digitalWrite(LED, HIGH);
       InfoLogger->println("LED is on");
+      InfoLogger->println(versionStr);
     }else{
       on = true;
       digitalWrite(LED, LOW);
