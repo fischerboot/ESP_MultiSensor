@@ -10,10 +10,10 @@ tbd
 - [ ] Usage of encryption
 # PIR integration
 
-- [x]
+- [x] make it happen
 # BME280 integration
 
-- [x]
+- [x] make it happen
 # general stuff
 
 - [ ] version automation
