@@ -15,7 +15,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20250920v0.4";
+const char* versionStr = "20250920v1.0";
 
 #define LED 2
 
@@ -68,7 +68,7 @@ void setup() {
   Serial.begin(115200);
   Serial.print("\n Starting Version:");
   Serial.println(versionStr);
-  pinMode(LED, OUTPUT);
+  //pinMode(LED, OUTPUT);
   pinMode(PIR_PIN, INPUT);
 
   // W-Lan Activating
@@ -86,6 +86,7 @@ void setup() {
   DebugLogger = new EspMultiLogger(Debug);
   EspMultiLogger::setLogLevel(Debug);
   EspMultiLogger::initLogger();
+  EspMultiLogger::setUserVersionString(versionStr);
 
   // OTA Begin
     // OTA (only after connection is established)
