@@ -5,9 +5,9 @@ tbd
 
 # MQTT integration
 
-[x] General usage
-[ ] Usage of authentication
-[ ] Usage of encryption
+- [x] General usage
+- [ ] Usage of authentication
+- [ ] Usage of encryption
 # PIR integration
 
 [x]
