@@ -6,28 +6,22 @@
 #include <Arduino.h>
 #include <EspMultiLogger.h>
 #include <ArduinoOTA.h>
-#include "WlanConfig.h"
 #include <PubSubClient.h>
 #include <Wire.h>
 #include <Adafruit_BME280.h>
 #include <Adafruit_Sensor.h>
+#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 
 /*
 Configuration
 */
-const char* versionStr = "20250920v1.1";
+const char* versionStr = "20250920v1.3";
 
 #define LED 2
 
-#ifndef WlanConfig_h
-#define STASSID "------------"
-#define STAPSK  "------------"
-#endif
-const char* ssid = STASSID;
-const char* password = STAPSK;
+char mqtt_server[40] = "192.168.2.127";
+char mqtt_port[6] = "1883";
 
-#define MQTT_SERVER "192.168.2.127"
-#define MQTT_PORT 1883
 #define MQTT_USER "yourUser"
 #define MQTT_PASS "yourPass"
 #define MQTT_TOPIC_PIR "esp/sensor/pir"
@@ -76,19 +70,29 @@ void setup() {
   Serial.begin(115200);
   Serial.print("\n Starting Version:");
   Serial.println(versionStr);
-  //pinMode(LED, OUTPUT);
   pinMode(PIR_PIN, INPUT);
 
   // W-Lan Activating
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
+  WiFiManager wifiManager;
+  // Uncomment for testing: 
+  //wifiManager.resetSettings();
+  // --- Add custom parameters for MQTT ---
+  WiFiManagerParameter custom_mqtt_server("server", "MQTT Server", mqtt_server, 40);
+  WiFiManagerParameter custom_mqtt_port("port", "MQTT Port", mqtt_port, 6);
+
+  wifiManager.addParameter(&custom_mqtt_server);
+  wifiManager.addParameter(&custom_mqtt_port);
+
+  if (!wifiManager.autoConnect("ESP_AccessPoint")) {
+    Serial.println("Failed to connect and hit timeout");
     ESP.restart();
   }
-  Serial.print("local ip: ");
-  Serial.println(WiFi.localIP());
+  Serial.println("WiFi connected: " + WiFi.localIP().toString());
+
+  // --- Read updated MQTT config from WiFiManager ---
+  strcpy(mqtt_server, custom_mqtt_server.getValue());
+  strcpy(mqtt_port, custom_mqtt_port.getValue());
 
   InfoLogger = new EspMultiLogger(Info);
   DebugLogger = new EspMultiLogger(Debug);
@@ -150,8 +154,8 @@ void setup() {
     InfoLogger->println("Could not find BME280 sensor!");
   }
 
-  // MQTT setup
-  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+  // --- MQTT setup with dynamic server/port ---
+  mqttClient.setServer(mqtt_server, atoi(mqtt_port));
 }
 
 void loop() {
