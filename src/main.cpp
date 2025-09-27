@@ -15,7 +15,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20250920v1.0";
+const char* versionStr = "20250920v1.1";
 
 #define LED 2
 
@@ -160,8 +160,8 @@ void loop() {
     lastPIRCheck = now;
     int newPIRState = digitalRead(PIR_PIN);
     if(newPIRState != pirState) {
-      pirState = newPIRState;
       InfoLogger->printf("PIR state changed from %d to %d\n", pirState, newPIRState);
+      pirState = newPIRState;
       mqttClient.publish(MQTT_TOPIC_PIR, pirState ? "1" : "0");
       // if(pirState==0){
       //   digitalWrite(LED,LOW);
@@ -179,11 +179,11 @@ void loop() {
     lastPublish = now;
     // BME280 sensor
     char payload[128];
-    snprintf(payload, sizeof(payload), "{%.2f}", bme.readPressure()/100.0F);
+    snprintf(payload, sizeof(payload), "%.2f", bme.readPressure()/100.0F);
     char payloadhum[128];
-    snprintf(payloadhum, sizeof(payload), "{%.2f}", bme.readHumidity());
+    snprintf(payloadhum, sizeof(payload), "%.2f", bme.readHumidity());
     char payloadtemp[128];
-    snprintf(payloadtemp, sizeof(payload), "{%.2f}", bme.readTemperature());
+    snprintf(payloadtemp, sizeof(payload), "%.2f", bme.readTemperature());
     mqttClient.publish(MQTT_TOPIC_BME_PRESSUR, payload);
     mqttClient.publish(MQTT_TOPIC_BME_hum, payloadhum);
     mqttClient.publish(MQTT_TOPIC_BME_temp, payloadtemp);
