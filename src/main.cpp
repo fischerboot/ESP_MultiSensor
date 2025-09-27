@@ -15,7 +15,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20250920v1.3";
+const char* versionStr = "20250927v1.4";
 
 #define LED 2
 
@@ -88,21 +88,29 @@ void setup() {
   wifiManager.addParameter(&custom_device_prefix);
   wifiManager.addParameter(&custom_mqtt_server);
   wifiManager.addParameter(&custom_mqtt_port);
-
+  // --- Read updated config from WiFiManager ---
   // Use prefix as part of AP name
   char apName[32];
   snprintf(apName, sizeof(apName), "%s_AccessPoint", device_prefix);
+
+  wifiManager.setConfigPortalTimeout(60); // timeout in seconds (e.g., 60 seconds = 1 minute)
+  wifiManager.startConfigPortal(apName);
 
   if (!wifiManager.autoConnect(apName)) {
     Serial.println("Failed to connect and hit timeout");
     ESP.restart();
   }
+
   Serial.println("WiFi connected: " + WiFi.localIP().toString());
 
   // --- Read updated config from WiFiManager ---
   strcpy(device_prefix, custom_device_prefix.getValue());
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
+  strcpy(device_prefix, custom_device_prefix.getValue());
+  if (device_prefix[0] == '\0') {
+    strcpy(device_prefix, "ESPMS"); // fallback to default if empty
+  }
 
   // Use prefix in logger initialisation
   InfoLogger = new EspMultiLogger(Info);
@@ -111,8 +119,9 @@ void setup() {
   EspMultiLogger::initLogger();
 
   // Combine version string and device prefix for logger
+  //int lenOfVersionWithPrefix = sizeof(versionStr) + sizeof(device_prefix) + 4; // 4 for " @ "
   char versionWithPrefix[48];
-  snprintf(versionWithPrefix, sizeof(versionWithPrefix), "%s_%s", versionStr, device_prefix);
+  snprintf(versionWithPrefix, sizeof(versionWithPrefix), "%s%s", versionStr, device_prefix);
   EspMultiLogger::setUserVersionString(versionWithPrefix);
 
   // OTA setup
