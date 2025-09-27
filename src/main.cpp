@@ -53,10 +53,14 @@ EspMultiLogger* DebugLogger;
 bool on = true;
 int pirState =0;
 
+char device_prefix[16] = "ESPMS"; // Default prefix
+
 void mqttReconnect() {
   while (!mqttClient.connected()) {
     InfoLogger->println("Attempting MQTT connection...");
-    if (mqttClient.connect("ESP_MultiSensor")) {
+    char mqttClientName[32];
+    snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
+    if (mqttClient.connect(mqttClientName)) {
       InfoLogger->println("MQTT connected");
     } else {
       InfoLogger->printf("MQTT failed, rc=%d\n", mqttClient.state());
@@ -75,38 +79,46 @@ void setup() {
   // W-Lan Activating
   WiFi.mode(WIFI_STA);
   WiFiManager wifiManager;
-  // Uncomment for testing: 
-  //wifiManager.resetSettings();
-  // --- Add custom parameters for MQTT ---
+
+  // --- Add custom parameters for MQTT and device prefix ---
+  WiFiManagerParameter custom_device_prefix("prefix", "Device Prefix", device_prefix, 16);
   WiFiManagerParameter custom_mqtt_server("server", "MQTT Server", mqtt_server, 40);
   WiFiManagerParameter custom_mqtt_port("port", "MQTT Port", mqtt_port, 6);
 
+  wifiManager.addParameter(&custom_device_prefix);
   wifiManager.addParameter(&custom_mqtt_server);
   wifiManager.addParameter(&custom_mqtt_port);
 
-  if (!wifiManager.autoConnect("ESP_AccessPoint")) {
+  // Use prefix as part of AP name
+  char apName[32];
+  snprintf(apName, sizeof(apName), "%s_AccessPoint", device_prefix);
+
+  if (!wifiManager.autoConnect(apName)) {
     Serial.println("Failed to connect and hit timeout");
     ESP.restart();
   }
   Serial.println("WiFi connected: " + WiFi.localIP().toString());
 
-  // --- Read updated MQTT config from WiFiManager ---
+  // --- Read updated config from WiFiManager ---
+  strcpy(device_prefix, custom_device_prefix.getValue());
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
 
+  // Use prefix in logger initialisation
   InfoLogger = new EspMultiLogger(Info);
   DebugLogger = new EspMultiLogger(Debug);
   EspMultiLogger::setLogLevel(Debug);
   EspMultiLogger::initLogger();
-  EspMultiLogger::setUserVersionString(versionStr);
 
-  // OTA Begin
-    // OTA (only after connection is established)
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
+  // Combine version string and device prefix for logger
+  char versionWithPrefix[48];
+  snprintf(versionWithPrefix, sizeof(versionWithPrefix), "%s_%s", versionStr, device_prefix);
+  EspMultiLogger::setUserVersionString(versionWithPrefix);
 
-  // Hostname defaults to esp8266-[ChipID]
-  ArduinoOTA.setHostname("fischerboot_Generic");
+  // OTA setup
+  char otaHostname[32];
+  snprintf(otaHostname, sizeof(otaHostname), "%s_Generic", device_prefix);
+  ArduinoOTA.setHostname(otaHostname);
 
   // No authentication by default
   // ArduinoOTA.setPassword("admin");
@@ -147,15 +159,18 @@ void setup() {
     }
   });
   ArduinoOTA.begin();
-  //OTA End
 
   // BME280 init
   if (!bme.begin(0x76)) {
     InfoLogger->println("Could not find BME280 sensor!");
   }
 
-  // --- MQTT setup with dynamic server/port ---
+  // --- MQTT setup with dynamic server/port and client name ---
+  char mqttClientName[32];
+  snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
   mqttClient.setServer(mqtt_server, atoi(mqtt_port));
+  // Store client name for use in mqttReconnect
+  mqttClient.setBufferSize(256); // Optional: increase if needed
 }
 
 void loop() {
