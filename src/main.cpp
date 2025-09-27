@@ -41,10 +41,18 @@ Adafruit_BME280 bme; // I2C
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-unsigned long lastPublish = 0;
-unsigned long lastPIRCheck = 0;
-const long publishInterval = 10000; // ms
-const long PIR_read_Interval = 500; // ms
+unsigned long lastSensorCheck = 0;
+const long Sensor_read_Interval = 500; // ms
+
+// Thresholds for publishing (adjust as needed)
+const float TEMP_THRESHOLD = 0.5;     // °C
+const float HUM_THRESHOLD = 2.0;      // %
+const float PRESSURE_THRESHOLD = 1.0; // hPa
+
+// Last published values
+float lastTemp = NAN;
+float lastHum = NAN;
+float lastPressure = NAN;
 
 EspMultiLogger* InfoLogger;
 EspMultiLogger* DebugLogger;
@@ -156,41 +164,42 @@ void loop() {
   }
   mqttClient.loop();
   unsigned long now = millis();
-  if (now - lastPIRCheck > PIR_read_Interval) {
-    lastPIRCheck = now;
+  if (now - lastSensorCheck > Sensor_read_Interval) {
+    lastSensorCheck = now;
     int newPIRState = digitalRead(PIR_PIN);
     if(newPIRState != pirState) {
       InfoLogger->printf("PIR state changed from %d to %d\n", pirState, newPIRState);
       pirState = newPIRState;
       mqttClient.publish(MQTT_TOPIC_PIR, pirState ? "1" : "0");
-      // if(pirState==0){
-      //   digitalWrite(LED,LOW);
-      //   InfoLogger->println("LED is on");
-      //   InfoLogger->println(versionStr);
-      // }else{
-      //   on = true;
-      //   digitalWrite(LED, HIGH);
-      //   InfoLogger->println("LED is off");
-      // }
     }
-  }
-  
-  if (now - lastPublish > publishInterval) {
-    lastPublish = now;
-    // BME280 sensor
-    char payload[128];
-    snprintf(payload, sizeof(payload), "%.2f", bme.readPressure()/100.0F);
-    char payloadhum[128];
-    snprintf(payloadhum, sizeof(payload), "%.2f", bme.readHumidity());
-    char payloadtemp[128];
-    snprintf(payloadtemp, sizeof(payload), "%.2f", bme.readTemperature());
-    mqttClient.publish(MQTT_TOPIC_BME_PRESSUR, payload);
-    mqttClient.publish(MQTT_TOPIC_BME_hum, payloadhum);
-    mqttClient.publish(MQTT_TOPIC_BME_temp, payloadtemp);
-    InfoLogger->printf("Sensor data published to MQTT at %lu \n", now);
-    InfoLogger->println(bme.readTemperature());
-    InfoLogger->println(bme.readHumidity());
-    InfoLogger->println(bme.readPressure()/100.0F);
+
+    // Read current sensor values
+    float temp = bme.readTemperature();
+    float hum = bme.readHumidity();
+    float pressure = bme.readPressure() / 100.0F;
+
+    // Only publish if value changed beyond threshold
+    if (isnan(lastTemp) || fabs(temp - lastTemp) > TEMP_THRESHOLD) {
+      char payload[16];
+      snprintf(payload, sizeof(payload), "%.2f", temp);
+      mqttClient.publish(MQTT_TOPIC_BME_temp, payload);
+      lastTemp = temp;
+      InfoLogger->printf("Temp published: %.2f\n", temp);
+    }
+    if (isnan(lastHum) || fabs(hum - lastHum) > HUM_THRESHOLD) {
+      char payload[16];
+      snprintf(payload, sizeof(payload), "%.2f", hum);
+      mqttClient.publish(MQTT_TOPIC_BME_hum, payload);
+      lastHum = hum;
+      InfoLogger->printf("Hum published: %.2f\n", hum);
+    }
+    if (isnan(lastPressure) || fabs(pressure - lastPressure) > PRESSURE_THRESHOLD) {
+      char payload[16];
+      snprintf(payload, sizeof(payload), "%.2f", pressure);
+      mqttClient.publish(MQTT_TOPIC_BME_PRESSUR, payload);
+      lastPressure = pressure;
+      InfoLogger->printf("Pressure published: %.2f\n", pressure);
+    }
   }
 
 }
