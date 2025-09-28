@@ -93,8 +93,8 @@ void setup() {
   char apName[32];
   snprintf(apName, sizeof(apName), "%s_AccessPoint", device_prefix);
 
-  wifiManager.setConfigPortalTimeout(60); // timeout in seconds (e.g., 60 seconds = 1 minute)
-  wifiManager.startConfigPortal(apName);
+  // wifiManager.setConfigPortalTimeout(60); // timeout in seconds (e.g., 60 seconds = 1 minute)
+  // wifiManager.startConfigPortal(apName);
 
   if (!wifiManager.autoConnect(apName)) {
     Serial.println("Failed to connect and hit timeout");
@@ -172,6 +172,12 @@ void setup() {
   // BME280 init
   if (!bme.begin(0x76)) {
     InfoLogger->println("Could not find BME280 sensor!");
+  } else {
+    // Replace with your actual altitude in meters
+    float myAltitude = 138.4; // Example: 350 meters above sea level
+    float measuredPressure = bme.readPressure() / 100.0F; // in hPa
+    float seaLevelPressure = bme.seaLevelForAltitude(myAltitude, measuredPressure);
+    InfoLogger->printf("Sea level pressure set to: %.2f hPa\n", seaLevelPressure);
   }
 
   // --- MQTT setup with dynamic server/port and client name ---
