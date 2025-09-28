@@ -42,6 +42,7 @@ const long Sensor_read_Interval = 500; // ms
 const float TEMP_THRESHOLD = 0.5;     // °C
 const float HUM_THRESHOLD = 2.0;      // %
 const float PRESSURE_THRESHOLD = 1.0; // hPa
+const float myAltitude = 138.4; // Example: 350 meters above sea level
 
 // Last published values
 float lastTemp = NAN;
@@ -172,12 +173,6 @@ void setup() {
   // BME280 init
   if (!bme.begin(0x76)) {
     InfoLogger->println("Could not find BME280 sensor!");
-  } else {
-    // Replace with your actual altitude in meters
-    float myAltitude = 138.4; // Example: 350 meters above sea level
-    float measuredPressure = bme.readPressure() / 100.0F; // in hPa
-    float seaLevelPressure = bme.seaLevelForAltitude(myAltitude, measuredPressure);
-    InfoLogger->printf("Sea level pressure set to: %.2f hPa\n", seaLevelPressure);
   }
 
   // --- MQTT setup with dynamic server/port and client name ---
@@ -211,6 +206,7 @@ void loop() {
     float temp = bme.readTemperature();
     float hum = bme.readHumidity();
     float pressure = bme.readPressure() / 100.0F;
+    float seaLevelPressure = bme.seaLevelForAltitude(myAltitude, pressure);
 
     // Only publish if value changed beyond threshold
     if (isnan(lastTemp) || fabs(temp - lastTemp) > TEMP_THRESHOLD) {
@@ -227,12 +223,12 @@ void loop() {
       lastHum = hum;
       InfoLogger->printf("Hum published: %.2f\n", hum);
     }
-    if (isnan(lastPressure) || fabs(pressure - lastPressure) > PRESSURE_THRESHOLD) {
+    if (isnan(lastPressure) || fabs(seaLevelPressure - lastPressure) > PRESSURE_THRESHOLD) {
       char payload[16];
-      snprintf(payload, sizeof(payload), "%.2f", pressure);
+      snprintf(payload, sizeof(payload), "%.2f", seaLevelPressure);
       mqttClient.publish(MQTT_TOPIC_BME_PRESSUR, payload);
-      lastPressure = pressure;
-      InfoLogger->printf("Pressure published: %.2f\n", pressure);
+      lastPressure = seaLevelPressure;
+      InfoLogger->printf("Pressure published: %.2f\n", seaLevelPressure);
     }
   }
 
