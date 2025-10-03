@@ -110,7 +110,7 @@ void setup() {
   strcpy(mqtt_port, custom_mqtt_port.getValue());
   strcpy(device_prefix, custom_device_prefix.getValue());
   if (device_prefix[0] == '\0') {
-    strcpy(device_prefix, "ESPMS"); // fallback to default if empty
+    strcpy(device_prefix, "BATH"); // fallback to default if empty
   }
 
   // Use prefix in logger initialisation
@@ -209,21 +209,25 @@ void loop() {
     float seaLevelPressure = bme.seaLevelForAltitude(myAltitude, pressure);
 
     // Only publish if value changed beyond threshold
-    if (isnan(lastTemp) || fabs(temp - lastTemp) > TEMP_THRESHOLD) {
+    if (!isnan(temp) && (isnan(lastTemp) || fabs(temp - lastTemp) > TEMP_THRESHOLD)) {
       char payload[16];
       snprintf(payload, sizeof(payload), "%.2f", temp);
       mqttClient.publish(MQTT_TOPIC_BME_temp, payload);
       lastTemp = temp;
       InfoLogger->printf("Temp published: %.2f\n", temp);
     }
-    if (isnan(lastHum) || fabs(hum - lastHum) > HUM_THRESHOLD) {
+
+    // Humidity
+    if (!isnan(hum) && (isnan(lastHum) || fabs(hum - lastHum) > HUM_THRESHOLD)) {
       char payload[16];
       snprintf(payload, sizeof(payload), "%.2f", hum);
       mqttClient.publish(MQTT_TOPIC_BME_hum, payload);
       lastHum = hum;
       InfoLogger->printf("Hum published: %.2f\n", hum);
     }
-    if (isnan(lastPressure) || fabs(seaLevelPressure - lastPressure) > PRESSURE_THRESHOLD) {
+
+    // Pressure
+    if (!isnan(seaLevelPressure) && (isnan(lastPressure) || fabs(seaLevelPressure - lastPressure) > PRESSURE_THRESHOLD)) {
       char payload[16];
       snprintf(payload, sizeof(payload), "%.2f", seaLevelPressure);
       mqttClient.publish(MQTT_TOPIC_BME_PRESSUR, payload);

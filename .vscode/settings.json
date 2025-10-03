@@ -21,7 +21,8 @@
         "type_traits": "cpp",
         "typeinfo": "cpp",
         "variant": "cpp",
-        "exception": "cpp"
+        "exception": "cpp",
+        "cmath": "cpp"
     },
     "openhab.host": "192.168.2.127"
 }
