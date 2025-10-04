@@ -70,6 +70,26 @@ void mqttReconnect() {
   }
 }
 
+void myTelnetWelcome(WiFiClient& client) {
+    client.println("=== ESP Multi Sensor Configuration ===\r\n");
+    client.print("Firmware Version: "); client.print(versionStr); client.print("\r\n");
+    client.print("Device Prefix: "); client.print(device_prefix); client.print("\r\n");
+    client.print("MQTT Server: "); client.print(mqtt_server); client.print("\r\n");
+    client.print("MQTT Port: "); client.print(mqtt_port); client.print("\r\n");
+    client.print("MQTT Client Name: "); 
+    char mqttClientName[32];
+    snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
+    client.print(mqttClientName); client.print("\r\n");
+    client.print("MQTT Topics:\r\n  PIR: "); client.print(MQTT_TOPIC_PIR); client.print("\r\n");
+    client.print("  Temp: "); client.print(MQTT_TOPIC_BME_temp); client.print("\r\n");
+    client.print("  Hum: "); client.print(MQTT_TOPIC_BME_hum); client.print("\r\n");
+    client.print("  Pressure: "); client.print(MQTT_TOPIC_BME_PRESSUR); client.print("\r\n");
+    client.print("PIR Pin: "); client.print(PIR_PIN); client.print("\r\n");
+    client.print("Altitude (m): "); client.print(myAltitude); client.print("\r\n");
+    client.print("Sensor thresholds:\r\n  Temp: "); client.print(TEMP_THRESHOLD); client.print(" °C\r\n  Hum: "); client.print(HUM_THRESHOLD); client.print(" %\r\n  Pressure: "); client.print(PRESSURE_THRESHOLD); client.print(" hPa\r\n");
+    client.print("======================================\r\n");
+}
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -181,6 +201,8 @@ void setup() {
   mqttClient.setServer(mqtt_server, atoi(mqtt_port));
   // Store client name for use in mqttReconnect
   mqttClient.setBufferSize(256); // Optional: increase if needed
+
+  EspMultiLogger::setTelnetWelcomeCallback(myTelnetWelcome);
 }
 
 void loop() {
