@@ -24,7 +24,7 @@ char mqtt_port[6] = "1883";
 
 #define MQTT_USER "yourUser"
 #define MQTT_PASS "yourPass"
-#define MQTT_TOPIC_PIR "esp/sensor/pir"
+#define MQTT_TOPIC_PIR "bath/sensor/pir"
 #define MQTT_TOPIC_BME_PRESSUR "esp/sensor/bme280/pressure"
 #define MQTT_TOPIC_BME_hum "esp/sensor/bme280/hum"
 #define MQTT_TOPIC_BME_temp "esp/sensor/bme280/temp"
@@ -54,7 +54,7 @@ EspMultiLogger* DebugLogger;
 bool on = true;
 int pirState =0;
 
-char device_prefix[16] = "ESPMS"; // Default prefix
+char device_prefix[16] = "ESPBATH"; // Default prefix
 
 void mqttReconnect() {
   while (!mqttClient.connected()) {
