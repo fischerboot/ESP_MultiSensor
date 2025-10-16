@@ -15,7 +15,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20250927v1.4";
+const char* versionStr = "20251005v1.5";
 
 #define LED 2
 
@@ -24,11 +24,11 @@ char mqtt_port[6] = "1883";
 
 #define MQTT_USER "yourUser"
 #define MQTT_PASS "yourPass"
-#define MQTT_TOPIC_PIR "bath/sensor/pir"
-#define MQTT_TOPIC_BME_PRESSUR "esp/sensor/bme280/pressure"
-#define MQTT_TOPIC_BME_hum "esp/sensor/bme280/hum"
-#define MQTT_TOPIC_BME_temp "esp/sensor/bme280/temp"
 
+char MQTT_TOPIC_PIR[60];
+char MQTT_TOPIC_BME_PRESSUR[60];
+char MQTT_TOPIC_BME_hum[60];
+char MQTT_TOPIC_BME_temp[60];
 
 #define PIR_PIN 12 // D6/GPIO2 PIR sensor pin
 Adafruit_BME280 bme; // I2C
@@ -53,8 +53,8 @@ EspMultiLogger* InfoLogger;
 EspMultiLogger* DebugLogger;
 bool on = true;
 int pirState =0;
-
-char device_prefix[16] = "ESPBATH"; // Default prefix
+#define DEFAULT_DEVICE_PREFIX "ESPKitchen"
+char device_prefix[16] = DEFAULT_DEVICE_PREFIX ; // Default prefix
 
 void mqttReconnect() {
   while (!mqttClient.connected()) {
@@ -130,7 +130,7 @@ void setup() {
   strcpy(mqtt_port, custom_mqtt_port.getValue());
   strcpy(device_prefix, custom_device_prefix.getValue());
   if (device_prefix[0] == '\0') {
-    strcpy(device_prefix, "BATH"); // fallback to default if empty
+    strcpy(device_prefix, DEFAULT_DEVICE_PREFIX); // fallback to default if empty
   }
 
   // Use prefix in logger initialisation
@@ -201,6 +201,12 @@ void setup() {
   mqttClient.setServer(mqtt_server, atoi(mqtt_port));
   // Store client name for use in mqttReconnect
   mqttClient.setBufferSize(256); // Optional: increase if needed
+
+  // Set MQTT topics based on device prefix
+  snprintf(MQTT_TOPIC_PIR, sizeof(MQTT_TOPIC_PIR), "esp/sensor/pir/%s", device_prefix);
+  snprintf(MQTT_TOPIC_BME_PRESSUR, sizeof(MQTT_TOPIC_BME_PRESSUR), "esp/sensor/bme280/pressure/%s", device_prefix);
+  snprintf(MQTT_TOPIC_BME_hum, sizeof(MQTT_TOPIC_BME_hum), "esp/sensor/bme280/hum/%s", device_prefix);
+  snprintf(MQTT_TOPIC_BME_temp, sizeof(MQTT_TOPIC_BME_temp), "esp/sensor/bme280/temp/%s", device_prefix);
 
   EspMultiLogger::setTelnetWelcomeCallback(myTelnetWelcome);
 }
