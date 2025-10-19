@@ -11,11 +11,12 @@
 #include <Adafruit_BMP280.h>
 #include <Adafruit_Sensor.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
+#include <time.h>
 
 /*
 Configuration
 */
-const char* versionStr = "20251019v1.7";
+const char* versionStr = "20251019v1.8";
 
 #define LED 2
 
@@ -55,6 +56,32 @@ int pirState =0;
 #define DEFAULT_DEVICE_PREFIX "ESPKitchen"
 char device_prefix[16] = DEFAULT_DEVICE_PREFIX ; // Default prefix
 
+// NTP configuration
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 3600;        // GMT+1 for Germany (adjust for your timezone)
+const int daylightOffset_sec = 3600;    // Daylight saving time offset
+
+void setupTime() {
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  InfoLogger->println("Waiting for NTP time sync...");
+  
+  time_t now = time(nullptr);
+  int attempts = 0;
+  while (now < 8 * 3600 * 2 && attempts < 20) { // Wait until we get a valid time
+    delay(1000);
+    InfoLogger->print(".");
+    now = time(nullptr);
+    attempts++;
+  }
+  
+  if (now > 8 * 3600 * 2) {
+    InfoLogger->println("\nTime synchronized!");
+    InfoLogger->printf("Current time: %s", ctime(&now));
+  } else {
+    InfoLogger->println("\nFailed to sync time, using millis() fallback");
+  }
+}
+
 void mqttReconnect() {
   while (!mqttClient.connected()) {
     InfoLogger->println("Attempting MQTT connection...");
@@ -71,6 +98,26 @@ void mqttReconnect() {
 
 void myTelnetWelcome(WiFiClient& client) {
     client.println("=== ESP Multi Sensor Configuration ===\r\n");
+    
+    // Show current time and uptime
+    time_t now = time(nullptr);
+    if (now > 8 * 3600 * 2) {
+        client.print("Current time: "); client.print(ctime(&now));
+    } else {
+        client.print("NTP time not synced\r\n");
+    }
+    
+    unsigned long ms = millis();
+    unsigned long seconds = ms / 1000;
+    unsigned long minutes = seconds / 60;
+    unsigned long hours = minutes / 60;
+    unsigned long days = hours / 24;
+    client.print("Uptime: ");
+    client.print(days); client.print("d ");
+    client.print(hours % 24); client.print("h ");
+    client.print(minutes % 60); client.print("m ");
+    client.print(seconds % 60); client.print("s\r\n");
+    
     client.print("Firmware Version: "); client.print(versionStr); client.print("\r\n");
     client.print("Device Prefix: "); client.print(device_prefix); client.print("\r\n");
     client.print("MQTT Server: "); client.print(mqtt_server); client.print("\r\n");
@@ -147,7 +194,8 @@ void setup() {
   char otaHostname[32];
   snprintf(otaHostname, sizeof(otaHostname), "%s_Generic", device_prefix);
   ArduinoOTA.setHostname(otaHostname);
-
+  // Setup NTP time synchronization
+  setupTime();
   // No authentication by default
   // ArduinoOTA.setPassword("admin");
 
