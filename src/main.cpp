@@ -16,7 +16,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20251019v1.8";
+const char* versionStr = "20251019v1.9";
 
 #define LED 2
 
@@ -112,7 +112,7 @@ void myTelnetWelcome(WiFiClient& client) {
     unsigned long minutes = seconds / 60;
     unsigned long hours = minutes / 60;
     unsigned long days = hours / 24;
-    client.print("Uptime: ");
+    client.print("\rUptime: ");
     client.print(days); client.print("d ");
     client.print(hours % 24); client.print("h ");
     client.print(minutes % 60); client.print("m ");
