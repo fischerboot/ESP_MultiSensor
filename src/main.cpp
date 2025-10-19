@@ -15,7 +15,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20251018v1.6";
+const char* versionStr = "20251019v1.7";
 
 #define LED 2
 
@@ -231,11 +231,8 @@ void loop() {
 
     // Read current sensor values
     float temp = bmp.readTemperature();
-    float temp2 = round(temp*2); // Round temperature to nearest integer
-    temp = temp2 / 2.0; // Restore rounded temperature with 0.5 precision
     float pressure = bmp.readPressure() / 100.0F;
     float seaLevelPressure = bmp.seaLevelForAltitude(myAltitude, pressure);
-    seaLevelPressure = round(seaLevelPressure); // Round to 0.1 hPa
 
     // Only publish if value changed beyond threshold
     if (!isnan(temp) && (isnan(lastTemp) || fabs(temp - lastTemp) > TEMP_THRESHOLD)) {
