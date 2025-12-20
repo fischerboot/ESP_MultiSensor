@@ -8,6 +8,7 @@
 #include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <Wire.h>
+#include <Adafruit_BME280.h>
 #include <Adafruit_BMP280.h>
 #include <Adafruit_Sensor.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
@@ -31,11 +32,19 @@ char MQTT_TOPIC_BME_PRESSUR[60];
 char MQTT_TOPIC_BME_temp[60];
 char MQTT_TOPIC_BMP_PRESSUR[60];
 char MQTT_TOPIC_BMP_temp[60];
+char MQTT_TOPIC_BME_hum[60];
 
 #define PIR_PIN 12 // D6/GPIO2 PIR sensor pin
+Adafruit_BME280 bme; // I2C (changed from bme to bmp)
 Adafruit_BMP280 bmp; // I2C (changed from bme to bmp)
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
+
+// Sensor detection
+enum SensorType { SENSOR_UNKNOWN = 0, SENSOR_BME280, SENSOR_BMP280 };
+SensorType detectedSensor = SENSOR_UNKNOWN;
+#define SENSOR_IS_BME() (detectedSensor == SENSOR_BME280)
+#define SENSOR_IS_BMP() (detectedSensor == SENSOR_BMP280)
 
 unsigned long lastSensorCheck = 0;
 const long Sensor_read_Interval = 500; // ms
@@ -43,17 +52,19 @@ const long Sensor_read_Interval = 500; // ms
 // Thresholds for publishing (adjust as needed)
 const float TEMP_THRESHOLD = 0.5;     // °C
 const float PRESSURE_THRESHOLD = 1.0; // hPa
+const float HUM_THRESHOLD = 2.0;      // %
 const float myAltitude = 138.4; // Example: 350 meters above sea level
 
 // Last published values
 float lastTemp = NAN;
+float lastHum = NAN;
 float lastPressure = NAN;
 
 EspMultiLogger* InfoLogger;
 EspMultiLogger* DebugLogger;
 bool on = true;
 int pirState =0;
-#define DEFAULT_DEVICE_PREFIX "ESPKitchen"
+#define DEFAULT_DEVICE_PREFIX "ESPBATH"
 char device_prefix[16] = DEFAULT_DEVICE_PREFIX ; // Default prefix
 
 // NTP configuration
@@ -127,8 +138,17 @@ void myTelnetWelcome(WiFiClient& client) {
     snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
     client.print(mqttClientName); client.print("\r\n");
     client.print("MQTT Topics:\r\n  PIR: "); client.print(MQTT_TOPIC_PIR); client.print("\r\n");
-    client.print("  Temp: "); client.print(MQTT_TOPIC_BME_temp); client.print("\r\n");
-    client.print("  Pressure: "); client.print(MQTT_TOPIC_BME_PRESSUR); client.print("\r\n");
+    if (detectedSensor == SENSOR_BME280) {
+      client.print("  Temp: "); client.print(MQTT_TOPIC_BME_temp); client.print("\r\n");
+      client.print("  Pressure: "); client.print(MQTT_TOPIC_BME_PRESSUR); client.print("\r\n");
+      client.print("  Hum: "); client.print(MQTT_TOPIC_BME_hum); client.print("\r\n");
+    } else if (detectedSensor == SENSOR_BMP280) {
+      client.print("  Temp: "); client.print(MQTT_TOPIC_BMP_temp); client.print("\r\n");
+      client.print("  Pressure: "); client.print(MQTT_TOPIC_BMP_PRESSUR); client.print("\r\n");
+      client.print("  Hum: N/A\r\n");
+    } else {
+      client.print("  Temp: N/A\r\n  Pressure: N/A\r\n  Hum: N/A\r\n");
+    }
     client.print("PIR Pin: "); client.print(PIR_PIN); client.print("\r\n");
     client.print("Altitude (m): "); client.print(myAltitude); client.print("\r\n");
     client.print("Sensor thresholds:\r\n  Temp: "); client.print(TEMP_THRESHOLD); client.print(" °C\r\n  Pressure: "); client.print(PRESSURE_THRESHOLD); client.print(" hPa\r\n");
@@ -235,10 +255,20 @@ void setup() {
     }
   });
   ArduinoOTA.begin();
-
-  // BME280 init
-  if (!bmp.begin(0x76)) {
-    InfoLogger->println("Could not find BME280 sensor!");
+  // BME/BMP280 init (try both common I2C addresses)
+  bool bmeFound = bme.begin(0x76) || bme.begin(0x77);
+  if (bmeFound) {
+    detectedSensor = SENSOR_BME280;
+    InfoLogger->println("Detected BME280 (humidity available)");
+  } else {
+    bool bmpFound = bmp.begin(0x76) || bmp.begin(0x77);
+    if (bmpFound) {
+      detectedSensor = SENSOR_BMP280;
+      InfoLogger->println("Detected BMP280 (no humidity)");
+    } else {
+      detectedSensor = SENSOR_UNKNOWN;
+      InfoLogger->println("Could not find BME/BMP280 sensor!");
+    }
   }
 
   // --- MQTT setup with dynamic server/port and client name ---
@@ -252,8 +282,9 @@ void setup() {
   snprintf(MQTT_TOPIC_PIR, sizeof(MQTT_TOPIC_PIR), "esp/sensor/pir/%s", device_prefix);
   snprintf(MQTT_TOPIC_BME_PRESSUR, sizeof(MQTT_TOPIC_BME_PRESSUR), "esp/sensor/bme280/pressure/%s", device_prefix);
   snprintf(MQTT_TOPIC_BME_temp, sizeof(MQTT_TOPIC_BME_temp), "esp/sensor/bme280/temp/%s", device_prefix);
-  snprintf(MQTT_TOPIC_BMP_temp, sizeof(MQTT_TOPIC_BMP_temp), "esp/sensor/bmp280/temp/%s", device_prefix);
+  snprintf(MQTT_TOPIC_BME_hum, sizeof(MQTT_TOPIC_BME_hum), "esp/sensor/bme280/hum/%s", device_prefix);
   snprintf(MQTT_TOPIC_BMP_PRESSUR, sizeof(MQTT_TOPIC_BMP_PRESSUR), "esp/sensor/bmp280/pressure/%s", device_prefix);
+  snprintf(MQTT_TOPIC_BMP_temp, sizeof(MQTT_TOPIC_BMP_temp), "esp/sensor/bmp280/temp/%s", device_prefix);
 
   EspMultiLogger::setTelnetWelcomeCallback(myTelnetWelcome);
 }
@@ -277,26 +308,51 @@ void loop() {
       mqttClient.publish(MQTT_TOPIC_PIR, pirState ? "1" : "0");
     }
 
-    // Read current sensor values
-    float temp = bmp.readTemperature();
-    float pressure = bmp.readPressure() / 100.0F;
-    float seaLevelPressure = bmp.seaLevelForAltitude(myAltitude, pressure);
+    // Read current sensor values from detected sensor
+    float temp = NAN;
+    float pressure = NAN;
+    float hum = NAN;
+    float seaLevelPressure = NAN;
+
+    if (SENSOR_IS_BME()) {
+      temp = bme.readTemperature();
+      pressure = bme.readPressure() / 100.0F;
+      hum = bme.readHumidity();
+      seaLevelPressure = bme.seaLevelForAltitude(myAltitude, pressure);
+    } else if (SENSOR_IS_BMP()) {
+      temp = bmp.readTemperature();
+      pressure = bmp.readPressure() / 100.0F;
+      seaLevelPressure = bmp.seaLevelForAltitude(myAltitude, pressure);
+    }
+
+    // choose topics according to detected sensor
+    const char* topicTemp = (SENSOR_IS_BME()) ? MQTT_TOPIC_BME_temp : MQTT_TOPIC_BMP_temp;
+    const char* topicPressure = (SENSOR_IS_BME()) ? MQTT_TOPIC_BME_PRESSUR : MQTT_TOPIC_BMP_PRESSUR;
 
     // Only publish if value changed beyond threshold
     if (!isnan(temp) && (isnan(lastTemp) || fabs(temp - lastTemp) > TEMP_THRESHOLD)) {
       char payload[16];
       snprintf(payload, sizeof(payload), "%.2f", temp);
-      mqttClient.publish(MQTT_TOPIC_BME_temp, payload);
+      mqttClient.publish(topicTemp, payload);
       lastTemp = temp;
       
       InfoLogger->printf("Temp published: %.2f\n", temp);
     }
-
+    // Humidity
+    if (SENSOR_IS_BME()) {
+      if (!isnan(hum) && (isnan(lastHum) || fabs(hum - lastHum) > HUM_THRESHOLD)) {
+        char payload[16];
+        snprintf(payload, sizeof(payload), "%.2f", hum);
+        mqttClient.publish(MQTT_TOPIC_BME_hum, payload);
+        lastHum = hum;
+        InfoLogger->printf("Hum published: %.2f\n", hum);
+      }
+    }
     // Pressure
     if (!isnan(seaLevelPressure) && (isnan(lastPressure) || fabs(seaLevelPressure - lastPressure) > PRESSURE_THRESHOLD)) {
       char payload[16];
       snprintf(payload, sizeof(payload), "%.2f", seaLevelPressure);
-      mqttClient.publish(MQTT_TOPIC_BME_PRESSUR, payload);
+      mqttClient.publish(topicPressure, payload);
       lastPressure = seaLevelPressure;
       InfoLogger->printf("Pressure published: %.2f\n", seaLevelPressure);
     }
