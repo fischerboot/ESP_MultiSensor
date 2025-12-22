@@ -13,14 +13,16 @@
 #include <Adafruit_Sensor.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 #include <time.h>
+#include <EEPROM.h>
 
 /*
 Configuration
 */
-const char* versionStr = "20251019v1.9";
+const char* versionStr = "20251222v1.11";
 
 #define LED 2
 
+// char mqtt_server[40] = "10.0.0.13";
 char mqtt_server[40] = "192.168.2.127";
 char mqtt_port[6] = "1883";
 
@@ -33,6 +35,8 @@ char MQTT_TOPIC_BME_temp[60];
 char MQTT_TOPIC_BMP_PRESSUR[60];
 char MQTT_TOPIC_BMP_temp[60];
 char MQTT_TOPIC_BME_hum[60];
+char MQTT_TOPIC_TEMP[60];
+char MQTT_TOPIC_PRESSURE[60];
 
 #define PIR_PIN 12 // D6/GPIO2 PIR sensor pin
 Adafruit_BME280 bme; // I2C (changed from bme to bmp)
@@ -64,8 +68,49 @@ EspMultiLogger* InfoLogger;
 EspMultiLogger* DebugLogger;
 bool on = true;
 int pirState =0;
-#define DEFAULT_DEVICE_PREFIX "ESPBATH"
+#define DEFAULT_DEVICE_PREFIX "ESP_Default"
 char device_prefix[16] = DEFAULT_DEVICE_PREFIX ; // Default prefix
+
+// Persistent config stored in EEPROM
+#define CONFIG_MAGIC "CFG1"
+struct DeviceConfig {
+  char magic[4];
+  char device_prefix[16];
+  char mqtt_server[40];
+  char mqtt_port[6];
+};
+
+void loadConfig() {
+  EEPROM.begin(512);
+  DeviceConfig cfg;
+  EEPROM.get(0, cfg);
+  if (memcmp(cfg.magic, CONFIG_MAGIC, 4) == 0) {
+    // copy values into globals, ensure NUL termination
+    memcpy(device_prefix, cfg.device_prefix, sizeof(device_prefix));
+    device_prefix[sizeof(device_prefix)-1] = '\0';
+    memcpy(mqtt_server, cfg.mqtt_server, sizeof(mqtt_server));
+    mqtt_server[sizeof(mqtt_server)-1] = '\0';
+    memcpy(mqtt_port, cfg.mqtt_port, sizeof(mqtt_port));
+    mqtt_port[sizeof(mqtt_port)-1] = '\0';
+    Serial.println("Loaded config from EEPROM");
+  } else {
+    Serial.println("No valid config in EEPROM, using defaults");
+  }
+}
+
+void saveConfig() {
+  DeviceConfig cfg;
+  memcpy(cfg.magic, CONFIG_MAGIC, 4);
+  memset(cfg.device_prefix, 0, sizeof(cfg.device_prefix));
+  memset(cfg.mqtt_server, 0, sizeof(cfg.mqtt_server));
+  memset(cfg.mqtt_port, 0, sizeof(cfg.mqtt_port));
+  strncpy(cfg.device_prefix, device_prefix, sizeof(cfg.device_prefix)-1);
+  strncpy(cfg.mqtt_server, mqtt_server, sizeof(cfg.mqtt_server)-1);
+  strncpy(cfg.mqtt_port, mqtt_port, sizeof(cfg.mqtt_port)-1);
+  EEPROM.put(0, cfg);
+  EEPROM.commit();
+  Serial.println("Saved config to EEPROM");
+}
 
 // NTP configuration
 const char* ntpServer = "pool.ntp.org";
@@ -138,16 +183,12 @@ void myTelnetWelcome(WiFiClient& client) {
     snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
     client.print(mqttClientName); client.print("\r\n");
     client.print("MQTT Topics:\r\n  PIR: "); client.print(MQTT_TOPIC_PIR); client.print("\r\n");
+    client.print("  Temp: "); client.print(MQTT_TOPIC_TEMP); client.print("\r\n");
+    client.print("  Pressure: "); client.print(MQTT_TOPIC_PRESSURE); client.print("\r\n");
     if (detectedSensor == SENSOR_BME280) {
-      client.print("  Temp: "); client.print(MQTT_TOPIC_BME_temp); client.print("\r\n");
-      client.print("  Pressure: "); client.print(MQTT_TOPIC_BME_PRESSUR); client.print("\r\n");
       client.print("  Hum: "); client.print(MQTT_TOPIC_BME_hum); client.print("\r\n");
-    } else if (detectedSensor == SENSOR_BMP280) {
-      client.print("  Temp: "); client.print(MQTT_TOPIC_BMP_temp); client.print("\r\n");
-      client.print("  Pressure: "); client.print(MQTT_TOPIC_BMP_PRESSUR); client.print("\r\n");
-      client.print("  Hum: N/A\r\n");
     } else {
-      client.print("  Temp: N/A\r\n  Pressure: N/A\r\n  Hum: N/A\r\n");
+      client.print("  Hum: N/A\r\n");
     }
     client.print("PIR Pin: "); client.print(PIR_PIN); client.print("\r\n");
     client.print("Altitude (m): "); client.print(myAltitude); client.print("\r\n");
@@ -161,6 +202,9 @@ void setup() {
   Serial.print("\n Starting Version:");
   Serial.println(versionStr);
   pinMode(PIR_PIN, INPUT);
+
+  // Load persisted config (if any) before creating WiFiManager parameters
+  loadConfig();
 
   // W-Lan Activating
   WiFi.mode(WIFI_STA);
@@ -197,6 +241,9 @@ void setup() {
   if (device_prefix[0] == '\0') {
     strcpy(device_prefix, DEFAULT_DEVICE_PREFIX); // fallback to default if empty
   }
+
+  // Persist updated configuration
+  saveConfig();
 
   // Use prefix in logger initialisation
   InfoLogger = new EspMultiLogger(Info);
@@ -278,13 +325,12 @@ void setup() {
   // Store client name for use in mqttReconnect
   mqttClient.setBufferSize(256); // Optional: increase if needed
 
-  // Set MQTT topics based on device prefix
+  // Set MQTT topics based on device prefix (generic topics for temp/pressure)
   snprintf(MQTT_TOPIC_PIR, sizeof(MQTT_TOPIC_PIR), "esp/sensor/pir/%s", device_prefix);
-  snprintf(MQTT_TOPIC_BME_PRESSUR, sizeof(MQTT_TOPIC_BME_PRESSUR), "esp/sensor/bme280/pressure/%s", device_prefix);
-  snprintf(MQTT_TOPIC_BME_temp, sizeof(MQTT_TOPIC_BME_temp), "esp/sensor/bme280/temp/%s", device_prefix);
-  snprintf(MQTT_TOPIC_BME_hum, sizeof(MQTT_TOPIC_BME_hum), "esp/sensor/bme280/hum/%s", device_prefix);
-  snprintf(MQTT_TOPIC_BMP_PRESSUR, sizeof(MQTT_TOPIC_BMP_PRESSUR), "esp/sensor/bmp280/pressure/%s", device_prefix);
-  snprintf(MQTT_TOPIC_BMP_temp, sizeof(MQTT_TOPIC_BMP_temp), "esp/sensor/bmp280/temp/%s", device_prefix);
+  snprintf(MQTT_TOPIC_TEMP, sizeof(MQTT_TOPIC_TEMP), "esp/sensor/temperature/%s", device_prefix);
+  snprintf(MQTT_TOPIC_PRESSURE, sizeof(MQTT_TOPIC_PRESSURE), "esp/sensor/pressure/%s", device_prefix);
+  // keep BME humidity topic (only published when BME present)
+  snprintf(MQTT_TOPIC_BME_hum, sizeof(MQTT_TOPIC_BME_hum), "esp/sensor/humidity/%s", device_prefix);
 
   EspMultiLogger::setTelnetWelcomeCallback(myTelnetWelcome);
 }
@@ -325,9 +371,9 @@ void loop() {
       seaLevelPressure = bmp.seaLevelForAltitude(myAltitude, pressure);
     }
 
-    // choose topics according to detected sensor
-    const char* topicTemp = (SENSOR_IS_BME()) ? MQTT_TOPIC_BME_temp : MQTT_TOPIC_BMP_temp;
-    const char* topicPressure = (SENSOR_IS_BME()) ? MQTT_TOPIC_BME_PRESSUR : MQTT_TOPIC_BMP_PRESSUR;
+    // use generic topics for temp/pressure regardless of sensor
+    const char* topicTemp = MQTT_TOPIC_TEMP;
+    const char* topicPressure = MQTT_TOPIC_PRESSURE;
 
     // Only publish if value changed beyond threshold
     if (!isnan(temp) && (isnan(lastTemp) || fabs(temp - lastTemp) > TEMP_THRESHOLD)) {
