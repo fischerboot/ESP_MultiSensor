@@ -14,6 +14,7 @@
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 #include <time.h>
 #include <EEPROM.h>
+#include <stdlib.h>
 
 /*
 Configuration
@@ -22,7 +23,6 @@ const char* versionStr = "20251222v1.11";
 
 #define LED 2
 
-// char mqtt_server[40] = "10.0.0.13";
 char mqtt_server[40] = "192.168.2.127";
 char mqtt_port[6] = "1883";
 
@@ -107,18 +107,32 @@ void saveConfig() {
   strncpy(cfg.device_prefix, device_prefix, sizeof(cfg.device_prefix)-1);
   strncpy(cfg.mqtt_server, mqtt_server, sizeof(cfg.mqtt_server)-1);
   strncpy(cfg.mqtt_port, mqtt_port, sizeof(cfg.mqtt_port)-1);
+
+  DeviceConfig existing;
+  EEPROM.get(0, existing);
+  if (memcmp(&existing, &cfg, sizeof(cfg)) == 0) {
+    Serial.println("EEPROM: no change, skipping write");
+    return;
+  }
+
   EEPROM.put(0, cfg);
   EEPROM.commit();
   Serial.println("Saved config to EEPROM");
 }
 
-// NTP configuration
+// NTP / TZ configuration
 const char* ntpServer = "pool.ntp.org";
-const long gmtOffset_sec = 3600;        // GMT+1 for Germany (adjust for your timezone)
-const int daylightOffset_sec = 3600;    // Daylight saving time offset
+// TZ string for Germany: CET (UTC+1) / CEST (UTC+2), handles DST automatically
+// Format: std time name offset dst name,rule
+const char* tzGermany = "CET-1CEST,M3.5.0/02:00,M10.5.0/03:00";
 
 void setupTime() {
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  // Install TZ environment so localtime() will apply CET/CEST rules automatically
+  setenv("TZ", tzGermany, 1);
+  tzset();
+
+  // Let system sync time from NTP; pass zero offsets because TZ is used
+  configTime(0, 0, ntpServer);
   InfoLogger->println("Waiting for NTP time sync...");
   
   time_t now = time(nullptr);
@@ -223,8 +237,8 @@ void setup() {
   char apName[32];
   snprintf(apName, sizeof(apName), "%s_AccessPoint", device_prefix);
 
-  // wifiManager.setConfigPortalTimeout(60); // timeout in seconds (e.g., 60 seconds = 1 minute)
-  // wifiManager.startConfigPortal(apName);
+  wifiManager.setConfigPortalTimeout(60); // timeout in seconds (e.g., 60 seconds = 1 minute)
+  wifiManager.startConfigPortal(apName);
 
   if (!wifiManager.autoConnect(apName)) {
     Serial.println("Failed to connect and hit timeout");
