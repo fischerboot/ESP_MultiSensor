@@ -19,7 +19,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20251222v1.11";
+const char* versionStr = "20251222v1.12";
 
 #define LED 2
 
