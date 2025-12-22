@@ -26,6 +26,9 @@ const char* versionStr = "20251222v1.11";
 char mqtt_server[40] = "192.168.2.127";
 char mqtt_port[6] = "1883";
 
+char mqtt_user[32] = "";
+char mqtt_pass[32] = "";
+
 #define MQTT_USER "yourUser"
 #define MQTT_PASS "yourPass"
 #define MQTT_RETRY_INTERVAL 5000 // ms
@@ -80,6 +83,8 @@ struct DeviceConfig {
   char device_prefix[16];
   char mqtt_server[40];
   char mqtt_port[6];
+  char mqtt_user[32];
+  char mqtt_pass[32];
 };
 
 void loadConfig() {
@@ -94,6 +99,10 @@ void loadConfig() {
     mqtt_server[sizeof(mqtt_server)-1] = '\0';
     memcpy(mqtt_port, cfg.mqtt_port, sizeof(mqtt_port));
     mqtt_port[sizeof(mqtt_port)-1] = '\0';
+    memcpy(mqtt_user, cfg.mqtt_user, sizeof(mqtt_user));
+    mqtt_user[sizeof(mqtt_user)-1] = '\0';
+    memcpy(mqtt_pass, cfg.mqtt_pass, sizeof(mqtt_pass));
+    mqtt_pass[sizeof(mqtt_pass)-1] = '\0';
     Serial.println("Loaded config from EEPROM");
   } else {
     Serial.println("No valid config in EEPROM, using defaults");
@@ -109,6 +118,8 @@ void saveConfig() {
   strncpy(cfg.device_prefix, device_prefix, sizeof(cfg.device_prefix)-1);
   strncpy(cfg.mqtt_server, mqtt_server, sizeof(cfg.mqtt_server)-1);
   strncpy(cfg.mqtt_port, mqtt_port, sizeof(cfg.mqtt_port)-1);
+  strncpy(cfg.mqtt_user, mqtt_user, sizeof(cfg.mqtt_user)-1);
+  strncpy(cfg.mqtt_pass, mqtt_pass, sizeof(cfg.mqtt_pass)-1);
 
   DeviceConfig existing;
   EEPROM.get(0, existing);
@@ -183,11 +194,16 @@ void handleMqttConnection() {
     InfoLogger->println("Attempting MQTT connection...");
     char mqttClientName[32];
     snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
-    if (mqttClient.connect(mqttClientName)) {
+    bool connected = false;
+    if (mqtt_user[0] == '\0') {
+      connected = mqttClient.connect(mqttClientName);
+    } else {
+      connected = mqttClient.connect(mqttClientName, mqtt_user, mqtt_pass);
+    }
+    if (connected) {
       InfoLogger->println("MQTT connected");
     } else {
       InfoLogger->printf("MQTT failed, rc=%d\n", mqttClient.state());
-      // do not delay here — next attempt will be scheduled by time check
     }
   }
 }
@@ -254,10 +270,14 @@ void setup() {
   WiFiManagerParameter custom_device_prefix("prefix", "Device Prefix", device_prefix, 16);
   WiFiManagerParameter custom_mqtt_server("server", "MQTT Server", mqtt_server, 40);
   WiFiManagerParameter custom_mqtt_port("port", "MQTT Port", mqtt_port, 6);
+  WiFiManagerParameter custom_mqtt_user("muser", "MQTT User", mqtt_user, 32);
+  WiFiManagerParameter custom_mqtt_pass("mpass", "MQTT Pass", mqtt_pass, 32);
 
   wifiManager.addParameter(&custom_device_prefix);
   wifiManager.addParameter(&custom_mqtt_server);
   wifiManager.addParameter(&custom_mqtt_port);
+  wifiManager.addParameter(&custom_mqtt_user);
+  wifiManager.addParameter(&custom_mqtt_pass);
   // --- Read updated config from WiFiManager ---
   // Use prefix as part of AP name
   char apName[32];
@@ -277,6 +297,8 @@ void setup() {
   strcpy(device_prefix, custom_device_prefix.getValue());
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
+  strcpy(mqtt_user, custom_mqtt_user.getValue());
+  strcpy(mqtt_pass, custom_mqtt_pass.getValue());
   strcpy(device_prefix, custom_device_prefix.getValue());
   if (device_prefix[0] == '\0') {
     strcpy(device_prefix, DEFAULT_DEVICE_PREFIX); // fallback to default if empty
