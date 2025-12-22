@@ -53,6 +53,84 @@ SensorType detectedSensor = SENSOR_UNKNOWN;
 #define SENSOR_IS_BME() (detectedSensor == SENSOR_BME280)
 #define SENSOR_IS_BMP() (detectedSensor == SENSOR_BMP280)
 
+bool tzApplied = false;      // true if POSIX TZ was applied by system
+bool tzFallbackActive = false; // true if we forced CET fallback
+
+// Calculate whether given UTC time is in German DST (CEST)
+// Uses civil date algorithms to be portable without timegm/timezone.
+static long days_from_civil(long y, unsigned m, unsigned d) {
+  y -= m <= 2;
+  const long era = (y >= 0 ? y : y-399) / 400;
+  const unsigned yoe = (unsigned)(y - era * 400);
+  const unsigned doy = (153*(m + (m > 2 ? -3 : 9)) + 2)/5 + d - 1;
+  const unsigned doe = yoe * 365 + yoe/4 - yoe/100 + doy;
+  return era * 146097 + (long)doe - 719468; // days since 1970-01-01
+}
+
+static int weekday_sakamoto(int y, int m, int d) {
+  static int t[] = {0,3,2,5,0,3,5,1,4,6,2,4};
+  if (m < 3) y -= 1;
+  return (y + y/4 - y/100 + y/400 + t[m-1] + d) % 7; // 0 = Sunday
+}
+
+bool isGermanDST(time_t utc) {
+  struct tm gm;
+  gmtime_r(&utc, &gm);
+  int year = gm.tm_year + 1900;
+
+  auto last_day_of_month = [&](int y, int month) {
+    // days per month, account for leap year in Feb
+    if (month == 2) {
+      bool leap = ( (y%4==0 && y%100!=0) || (y%400==0) );
+      return leap ? 29 : 28;
+    }
+    const int mdays[] = {0,31,28,31,30,31,30,31,31,30,31,30,31};
+    return mdays[month];
+  };
+
+  int lastMar = last_day_of_month(year, 3);
+  int wdLastMar = weekday_sakamoto(year, 3, lastMar); // 0=Sun
+  int lastSundayMar = lastMar - wdLastMar;
+  int lastOct = last_day_of_month(year, 10);
+  int wdLastOct = weekday_sakamoto(year, 10, lastOct);
+  int lastSundayOct = lastOct - wdLastOct;
+
+  // DST start at last Sunday March 01:00 UTC
+  long start_days = days_from_civil(year, 3, lastSundayMar);
+  time_t start = start_days * 86400 + 1*3600;
+  // DST end at last Sunday October 01:00 UTC
+  long end_days = days_from_civil(year, 10, lastSundayOct);
+  time_t end = end_days * 86400 + 1*3600;
+
+  return (utc >= start && utc < end);
+}
+
+// Compute displayed local time (seconds) when TZ not applied: base + DST
+time_t displayedLocalTimeSec(time_t nowUtc) {
+  const time_t base = 3600; // CET offset
+  time_t dst = isGermanDST(nowUtc) ? 3600 : 0;
+  return nowUtc + base + dst;
+}
+
+// Format local time into buffer. Handles tzApplied case and fallback case.
+void formatLocalTime(time_t nowUtc, char* buf, size_t len) {
+  if (tzApplied) {
+    struct tm lt;
+    localtime_r(&nowUtc, &lt);
+    strftime(buf, len, "%Y-%m-%d %H:%M:%S %Z", &lt);
+  } else {
+    time_t dt = displayedLocalTimeSec(nowUtc);
+    struct tm t;
+    gmtime_r(&dt, &t);
+    bool dst = isGermanDST(nowUtc);
+    char suffix[8];
+    snprintf(suffix, sizeof(suffix), dst ? " CEST" : " CET");
+    strftime(buf, len, "%Y-%m-%d %H:%M:%S", &t);
+    // append suffix if space
+    strncat(buf, suffix, len - strlen(buf) - 1);
+  }
+}
+
 unsigned long lastSensorCheck = 0;
 const long Sensor_read_Interval = 500; // ms
 
@@ -164,16 +242,31 @@ void setupTime() {
     char buf[64];
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S UTC", &tm_utc);
     InfoLogger->printf("\nUTC time: %s\n", buf);
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S %Z", &tm_local);
-    InfoLogger->printf("Local time: %s\n", buf);
+    // Use formatLocalTime to show either system localtime or computed fallback
+    char localBuf[80];
+    formatLocalTime(now, localBuf, sizeof(localBuf));
+    InfoLogger->printf("Local time: %s\n", localBuf);
+    // Diagnostic: print TZ env and DST flag/name
+    const char* tz = getenv("TZ");
+    InfoLogger->printf("TZ env: %s\n", tz ? tz : "(null)");
+    InfoLogger->printf("local isdst=%d\n", tm_local.tm_isdst);
+    // tm_zone is not portable; use TZ env and tm_local.tm_isdst diagnostics above
 
     // If local == UTC, TZ didn't apply — fallback to forcing CET
-    if (tm_local.tm_hour == tm_utc.tm_hour) {
-      InfoLogger->println("TZ not applied — forcing CET (UTC+1) offset");
-      // Use single hour offset (GMT+1). Previously using (3600,3600) could add both offsets resulting in +2h.
-      configTime(3600, 0, ntpServer);
-      now = time(nullptr);
-    }
+      if (tm_local.tm_hour == tm_utc.tm_hour) {
+        InfoLogger->println("TZ not applied — falling back to forced CET (UTC+1)");
+        // Force CET (UTC+1). POSIX TZ sometimes isn't supported on all cores (ESP8266),
+        // so fall back to a fixed offset to ensure correct winter time. DST handled in software.
+        configTime(3600, 0, ntpServer);
+        tzFallbackActive = true;
+        delay(500); // allow time to re-sync small
+        now = time(nullptr);
+        char localBuf2[80];
+        formatLocalTime(now, localBuf2, sizeof(localBuf2));
+        InfoLogger->printf("After fallback local time: %s\n", localBuf2);
+      } else {
+        tzApplied = true;
+      }
 
     InfoLogger->println("\nTime synchronized!");
     InfoLogger->printf("Current time: %s", ctime(&now));
