@@ -29,8 +29,6 @@ char mqtt_port[6] = "1883";
 char mqtt_user[32] = "";
 char mqtt_pass[32] = "";
 
-#define MQTT_USER "yourUser"
-#define MQTT_PASS "yourPass"
 #define MQTT_RETRY_INTERVAL 5000 // ms
 unsigned long lastMqttAttempt = 0;
 
