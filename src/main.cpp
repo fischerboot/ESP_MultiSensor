@@ -28,6 +28,8 @@ char mqtt_port[6] = "1883";
 
 #define MQTT_USER "yourUser"
 #define MQTT_PASS "yourPass"
+#define MQTT_RETRY_INTERVAL 5000 // ms
+unsigned long lastMqttAttempt = 0;
 
 char MQTT_TOPIC_PIR[60];
 char MQTT_TOPIC_BME_PRESSUR[60];
@@ -170,8 +172,14 @@ void setupTime() {
   }
 }
 
-void mqttReconnect() {
-  while (!mqttClient.connected()) {
+void handleMqttConnection() {
+  if (mqttClient.connected()){
+    mqttClient.loop();
+  } else{
+    unsigned long now = millis();
+    if (now - lastMqttAttempt < MQTT_RETRY_INTERVAL) return;
+    lastMqttAttempt = now;
+
     InfoLogger->println("Attempting MQTT connection...");
     char mqttClientName[32];
     snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
@@ -179,7 +187,7 @@ void mqttReconnect() {
       InfoLogger->println("MQTT connected");
     } else {
       InfoLogger->printf("MQTT failed, rc=%d\n", mqttClient.state());
-      delay(5000);
+      // do not delay here — next attempt will be scheduled by time check
     }
   }
 }
@@ -372,10 +380,8 @@ void loop() {
   ArduinoOTA.handle();
   EspMultiLogger::loopLogger();
 
-  if (!mqttClient.connected()) {
-    mqttReconnect();
-  }
-  mqttClient.loop();
+  handleMqttConnection();
+
   unsigned long now = millis();
   if (now - lastSensorCheck > Sensor_read_Interval) {
     lastSensorCheck = now;
