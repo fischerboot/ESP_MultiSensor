@@ -127,24 +127,42 @@ const char* ntpServer = "pool.ntp.org";
 const char* tzGermany = "CET-1CEST,M3.5.0/02:00,M10.5.0/03:00";
 
 void setupTime() {
-  // Install TZ environment so localtime() will apply CET/CEST rules automatically
+  // set TZ for Germany (CET/CEST)
   setenv("TZ", tzGermany, 1);
   tzset();
 
-  // Let system sync time from NTP; pass zero offsets because TZ is used
+  // ask NTP to sync (use 0,0 because TZ should handle offsets)
   configTime(0, 0, ntpServer);
   InfoLogger->println("Waiting for NTP time sync...");
-  
-  time_t now = time(nullptr);
+
+  time_t now;
   int attempts = 0;
-  while (now < 8 * 3600 * 2 && attempts < 20) { // Wait until we get a valid time
+  while ((now = time(nullptr)) < 8 * 3600 * 2 && attempts < 20) {
     delay(1000);
     InfoLogger->print(".");
-    now = time(nullptr);
     attempts++;
   }
-  
+
   if (now > 8 * 3600 * 2) {
+    // re-apply tz rules after sync and show both UTC and local for diagnosis
+    tzset();
+    struct tm tm_utc, tm_local;
+    gmtime_r(&now, &tm_utc);
+    localtime_r(&now, &tm_local);
+
+    char buf[64];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S UTC", &tm_utc);
+    InfoLogger->printf("\nUTC time: %s\n", buf);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S %Z", &tm_local);
+    InfoLogger->printf("Local time: %s\n", buf);
+
+    // If local == UTC, TZ didn't apply — fallback to forcing CET
+    if (tm_local.tm_hour == tm_utc.tm_hour) {
+      InfoLogger->println("TZ not applied — forcing CET offset");
+      configTime(3600, 3600, ntpServer);
+      now = time(nullptr);
+    }
+
     InfoLogger->println("\nTime synchronized!");
     InfoLogger->printf("Current time: %s", ctime(&now));
   } else {
