@@ -171,8 +171,9 @@ void setupTime() {
 
     // If local == UTC, TZ didn't apply — fallback to forcing CET
     if (tm_local.tm_hour == tm_utc.tm_hour) {
-      InfoLogger->println("TZ not applied — forcing CET offset");
-      configTime(3600, 3600, ntpServer);
+      InfoLogger->println("TZ not applied — forcing CET (UTC+1) offset");
+      // Use single hour offset (GMT+1). Previously using (3600,3600) could add both offsets resulting in +2h.
+      configTime(3600, 0, ntpServer);
       now = time(nullptr);
     }
 
