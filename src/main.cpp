@@ -19,7 +19,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20251222v1.12";
+const char* versionStr = "20260202v1.13";
 
 #define LED 2
 
@@ -152,8 +152,12 @@ int pirState =0;
 #define DEFAULT_DEVICE_PREFIX "ESP_Default"
 char device_prefix[16] = DEFAULT_DEVICE_PREFIX ; // Default prefix
 
+// Auto-discovery platform selection
+enum DiscoveryPlatform { DISCOVERY_NONE = 0, DISCOVERY_HOMEASSISTANT = 1 };
+DiscoveryPlatform discoveryPlatform = DISCOVERY_HOMEASSISTANT; // Default to Home Assistant
+
 // Persistent config stored in EEPROM
-#define CONFIG_MAGIC "CFG1"
+#define CONFIG_MAGIC "CFG2"
 struct DeviceConfig {
   char magic[4];
   char device_prefix[16];
@@ -161,6 +165,7 @@ struct DeviceConfig {
   char mqtt_port[6];
   char mqtt_user[32];
   char mqtt_pass[32];
+  uint8_t discovery_platform;
 };
 
 void loadConfig() {
@@ -179,6 +184,7 @@ void loadConfig() {
     mqtt_user[sizeof(mqtt_user)-1] = '\0';
     memcpy(mqtt_pass, cfg.mqtt_pass, sizeof(mqtt_pass));
     mqtt_pass[sizeof(mqtt_pass)-1] = '\0';
+    discoveryPlatform = (DiscoveryPlatform)cfg.discovery_platform;
     Serial.println("Loaded config from EEPROM");
   } else {
     Serial.println("No valid config in EEPROM, using defaults");
@@ -196,6 +202,7 @@ void saveConfig() {
   strncpy(cfg.mqtt_port, mqtt_port, sizeof(cfg.mqtt_port)-1);
   strncpy(cfg.mqtt_user, mqtt_user, sizeof(cfg.mqtt_user)-1);
   strncpy(cfg.mqtt_pass, mqtt_pass, sizeof(cfg.mqtt_pass)-1);
+  cfg.discovery_platform = (uint8_t)discoveryPlatform;
 
   DeviceConfig existing;
   EEPROM.get(0, existing);
@@ -275,10 +282,68 @@ void setupTime() {
   }
 }
 
+// Publish Home Assistant MQTT Discovery messages
+void publishHomeAssistantDiscovery() {
+  char topic[128];
+  char payload[256];
+
+  InfoLogger->println("Publishing Home Assistant discovery messages...");
+
+  // PIR sensor
+  snprintf(topic, sizeof(topic), "homeassistant/binary_sensor/%s_pir/config", device_prefix);
+  snprintf(payload, sizeof(payload), 
+    "{\"name\":\"PIR %s\",\"device_class\":\"motion\",\"state_topic\":\"%s\",\"unique_id\":\"%s_pir\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_PIR, device_prefix, device_prefix, device_prefix);
+  mqttClient.publish(topic, payload);
+  InfoLogger->println("  PIR discovery published");
+
+  // Temperature sensor
+  snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_temp/config", device_prefix);
+  snprintf(payload, sizeof(payload), 
+    "{\"name\":\"Temperature %s\",\"device_class\":\"temperature\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"°C\",\"unique_id\":\"%s_temp\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_TEMP, device_prefix, device_prefix, device_prefix);
+  mqttClient.publish(topic, payload);
+  InfoLogger->println("  Temperature discovery published");
+
+  // Pressure sensor
+  snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_pressure/config", device_prefix);
+  snprintf(payload, sizeof(payload), 
+    "{\"name\":\"Pressure %s\",\"device_class\":\"pressure\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"hPa\",\"unique_id\":\"%s_pressure\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_PRESSURE, device_prefix, device_prefix, device_prefix);
+  mqttClient.publish(topic, payload);
+  InfoLogger->println("  Pressure discovery published");
+
+  // Humidity sensor (only if BME280)
+  if (SENSOR_IS_BME()) {
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_humidity/config", device_prefix);
+    snprintf(payload, sizeof(payload), 
+      "{\"name\":\"Humidity %s\",\"device_class\":\"humidity\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"%%\",\"unique_id\":\"%s_humidity\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+      device_prefix, MQTT_TOPIC_BME_hum, device_prefix, device_prefix, device_prefix);
+    mqttClient.publish(topic, payload);
+    InfoLogger->println("  Humidity discovery published");
+  }
+}
+
+// Publish discovery messages based on configured platform
+void publishDiscoveryMessages() {
+  if (discoveryPlatform == DISCOVERY_HOMEASSISTANT) {
+    publishHomeAssistantDiscovery();
+  }
+}
+
+// Track if discovery has been published
+bool discoveryPublished = false;
+
 void handleMqttConnection() {
   if (mqttClient.connected()){
     mqttClient.loop();
+    // Publish discovery messages on first connection
+    if (!discoveryPublished && discoveryPlatform != DISCOVERY_NONE) {
+      publishDiscoveryMessages();
+      discoveryPublished = true;
+    }
   } else{
+    discoveryPublished = false; // Reset on disconnect
     unsigned long now = millis();
     if (now - lastMqttAttempt < MQTT_RETRY_INTERVAL) return;
     lastMqttAttempt = now;
