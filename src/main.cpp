@@ -19,7 +19,7 @@
 /*
 Configuration
 */
-const char* versionStr = "20260202v1.13";
+const char* versionStr = "20260202v1.14";
 
 #define LED 2
 
@@ -393,6 +393,12 @@ void myTelnetWelcome(WiFiClient& client) {
     client.print("Device Prefix: "); client.print(device_prefix); client.print("\r\n");
     client.print("MQTT Server: "); client.print(mqtt_server); client.print("\r\n");
     client.print("MQTT Port: "); client.print(mqtt_port); client.print("\r\n");
+    client.print("MQTT User: ");
+    if (mqtt_user[0] == '\0') {
+      client.print("(none - anonymous connection)\r\n");
+    } else {
+      client.print(mqtt_user); client.print("\r\n");
+    }
     client.print("MQTT Client Name: "); 
     char mqttClientName[32];
     snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
