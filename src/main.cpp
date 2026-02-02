@@ -23,11 +23,13 @@ const char* versionStr = "20260202v1.13";
 
 #define LED 2
 
+#define MQTT_PASS_LEN 80
+
 char mqtt_server[40] = "192.168.2.127";
 char mqtt_port[6] = "1883";
 
 char mqtt_user[32] = "";
-char mqtt_pass[32] = "";
+char mqtt_pass[MQTT_PASS_LEN] = "";
 
 #define MQTT_RETRY_INTERVAL 5000 // ms
 unsigned long lastMqttAttempt = 0;
@@ -164,7 +166,7 @@ struct DeviceConfig {
   char mqtt_server[40];
   char mqtt_port[6];
   char mqtt_user[32];
-  char mqtt_pass[32];
+  char mqtt_pass[MQTT_PASS_LEN];
   uint8_t discovery_platform;
 };
 
@@ -428,7 +430,7 @@ void setup() {
   WiFiManagerParameter custom_mqtt_server("server", "MQTT Server", mqtt_server, 40);
   WiFiManagerParameter custom_mqtt_port("port", "MQTT Port", mqtt_port, 6);
   WiFiManagerParameter custom_mqtt_user("muser", "MQTT User", mqtt_user, 32);
-  WiFiManagerParameter custom_mqtt_pass("mpass", "MQTT Pass", mqtt_pass, 32);
+  WiFiManagerParameter custom_mqtt_pass("mpass", "MQTT Pass", mqtt_pass, MQTT_PASS_LEN);
 
   wifiManager.addParameter(&custom_device_prefix);
   wifiManager.addParameter(&custom_mqtt_server);
