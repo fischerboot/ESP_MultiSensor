@@ -15,11 +15,12 @@
 #include <time.h>
 #include <EEPROM.h>
 #include <stdlib.h>
+#include <HealthMonitor.h>
 
 /*
 Configuration
 */
-const char* versionStr = "20260202v1.14";
+const char* versionStr = "20260331v1.15";
 
 #define LED 2
 
@@ -42,6 +43,17 @@ char MQTT_TOPIC_BMP_temp[60];
 char MQTT_TOPIC_BME_hum[60];
 char MQTT_TOPIC_TEMP[60];
 char MQTT_TOPIC_PRESSURE[60];
+
+// Health monitoring topics
+char MQTT_TOPIC_HEALTH_STATUS[60];
+char MQTT_TOPIC_HEALTH_RSSI[60];
+char MQTT_TOPIC_HEALTH_HEAP[60];
+char MQTT_TOPIC_HEALTH_UPTIME[60];
+char MQTT_TOPIC_HEALTH_WIFI[60];
+char MQTT_TOPIC_HEALTH_MQTT[60];
+char MQTT_TOPIC_HEALTH_SENSOR[60];
+char MQTT_TOPIC_HEALTH_MQTT_FAILS[60];
+char MQTT_TOPIC_AVAILABILITY[60];  // LWT topic for device availability
 
 #define PIR_PIN 12 // D6/GPIO2 PIR sensor pin
 Adafruit_BME280 bme; // I2C (changed from bme to bmp)
@@ -150,6 +162,9 @@ float lastPressure = NAN;
 EspMultiLogger* InfoLogger;
 EspMultiLogger* DebugLogger;
 bool on = true;
+
+// Health Monitor instance
+HealthMonitor healthMonitor;
 int pirState =0;
 #define DEFAULT_DEVICE_PREFIX "ESP_Default"
 char device_prefix[16] = DEFAULT_DEVICE_PREFIX ; // Default prefix
@@ -294,24 +309,27 @@ void publishHomeAssistantDiscovery() {
   // PIR sensor
   snprintf(topic, sizeof(topic), "homeassistant/binary_sensor/%s_pir/config", device_prefix);
   snprintf(payload, sizeof(payload), 
-    "{\"name\":\"PIR %s\",\"device_class\":\"motion\",\"state_topic\":\"%s\",\"unique_id\":\"%s_pir\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
-    device_prefix, MQTT_TOPIC_PIR, device_prefix, device_prefix, device_prefix);
+    "{\"name\":\"PIR %s\",\"device_class\":\"motion\",\"state_topic\":\"%s\",\"unique_id\":\"%s_pir\","
+    "\"availability_topic\":\"%s\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_PIR, device_prefix, MQTT_TOPIC_AVAILABILITY, device_prefix, device_prefix);
   mqttClient.publish(topic, payload);
   InfoLogger->println("  PIR discovery published");
 
   // Temperature sensor
   snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_temp/config", device_prefix);
   snprintf(payload, sizeof(payload), 
-    "{\"name\":\"Temperature %s\",\"device_class\":\"temperature\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"°C\",\"unique_id\":\"%s_temp\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
-    device_prefix, MQTT_TOPIC_TEMP, device_prefix, device_prefix, device_prefix);
+    "{\"name\":\"Temperature %s\",\"device_class\":\"temperature\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"°C\","
+    "\"unique_id\":\"%s_temp\",\"availability_topic\":\"%s\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_TEMP, device_prefix, MQTT_TOPIC_AVAILABILITY, device_prefix, device_prefix);
   mqttClient.publish(topic, payload);
   InfoLogger->println("  Temperature discovery published");
 
   // Pressure sensor
   snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_pressure/config", device_prefix);
   snprintf(payload, sizeof(payload), 
-    "{\"name\":\"Pressure %s\",\"device_class\":\"pressure\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"hPa\",\"unique_id\":\"%s_pressure\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
-    device_prefix, MQTT_TOPIC_PRESSURE, device_prefix, device_prefix, device_prefix);
+    "{\"name\":\"Pressure %s\",\"device_class\":\"pressure\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"hPa\","
+    "\"unique_id\":\"%s_pressure\",\"availability_topic\":\"%s\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_PRESSURE, device_prefix, MQTT_TOPIC_AVAILABILITY, device_prefix, device_prefix);
   mqttClient.publish(topic, payload);
   InfoLogger->println("  Pressure discovery published");
 
@@ -319,11 +337,61 @@ void publishHomeAssistantDiscovery() {
   if (SENSOR_IS_BME()) {
     snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_humidity/config", device_prefix);
     snprintf(payload, sizeof(payload), 
-      "{\"name\":\"Humidity %s\",\"device_class\":\"humidity\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"%%\",\"unique_id\":\"%s_humidity\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
-      device_prefix, MQTT_TOPIC_BME_hum, device_prefix, device_prefix, device_prefix);
+      "{\"name\":\"Humidity %s\",\"device_class\":\"humidity\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"%%\","
+      "\"unique_id\":\"%s_humidity\",\"availability_topic\":\"%s\",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+      device_prefix, MQTT_TOPIC_BME_hum, device_prefix, MQTT_TOPIC_AVAILABILITY, device_prefix, device_prefix);
     mqttClient.publish(topic, payload);
     InfoLogger->println("  Humidity discovery published");
   }
+
+  // Health Status Sensor
+  snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_health/config", device_prefix);
+  snprintf(payload, sizeof(payload), 
+    "{\"name\":\"Health %s\",\"state_topic\":\"%s\",\"value_template\":\"{{ value_json.status }}\","
+    "\"json_attributes_topic\":\"%s\",\"unique_id\":\"%s_health\","
+    "\"entity_category\":\"diagnostic\",\"icon\":\"mdi:heart-pulse\","
+    "\"availability_topic\":\"%s\","
+    "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_HEALTH_STATUS, MQTT_TOPIC_HEALTH_STATUS, device_prefix, 
+    MQTT_TOPIC_AVAILABILITY, device_prefix, device_prefix);
+  mqttClient.publish(topic, payload);
+  InfoLogger->println("  Health status discovery published");
+
+  // WiFi RSSI Sensor
+  snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_rssi/config", device_prefix);
+  snprintf(payload, sizeof(payload), 
+    "{\"name\":\"WiFi Signal %s\",\"device_class\":\"signal_strength\","
+    "\"state_topic\":\"%s\",\"unit_of_measurement\":\"dBm\",\"unique_id\":\"%s_rssi\","
+    "\"entity_category\":\"diagnostic\",\"availability_topic\":\"%s\","
+    "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_HEALTH_RSSI, device_prefix, MQTT_TOPIC_AVAILABILITY,
+    device_prefix, device_prefix);
+  mqttClient.publish(topic, payload);
+  InfoLogger->println("  RSSI discovery published");
+
+  // Free Heap Sensor
+  snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_heap/config", device_prefix);
+  snprintf(payload, sizeof(payload), 
+    "{\"name\":\"Free Memory %s\",\"state_topic\":\"%s\",\"unit_of_measurement\":\"B\","
+    "\"unique_id\":\"%s_heap\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:memory\","
+    "\"availability_topic\":\"%s\","
+    "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_HEALTH_HEAP, device_prefix, MQTT_TOPIC_AVAILABILITY,
+    device_prefix, device_prefix);
+  mqttClient.publish(topic, payload);
+  InfoLogger->println("  Heap discovery published");
+
+  // Uptime Sensor
+  snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_uptime/config", device_prefix);
+  snprintf(payload, sizeof(payload), 
+    "{\"name\":\"Uptime %s\",\"device_class\":\"duration\","
+    "\"state_topic\":\"%s\",\"unit_of_measurement\":\"s\",\"unique_id\":\"%s_uptime\","
+    "\"entity_category\":\"diagnostic\",\"availability_topic\":\"%s\","
+    "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+    device_prefix, MQTT_TOPIC_HEALTH_UPTIME, device_prefix, MQTT_TOPIC_AVAILABILITY,
+    device_prefix, device_prefix);
+  mqttClient.publish(topic, payload);
+  InfoLogger->println("  Uptime discovery published");
 }
 
 // Publish discovery messages based on configured platform
@@ -336,6 +404,80 @@ void publishDiscoveryMessages() {
 // Track if discovery has been published
 bool discoveryPublished = false;
 
+void publishHealthMetrics() {
+  if (!mqttClient.connected()) {
+    healthMonitor.setMQTTConnected(false);
+    return;
+  }
+  
+  healthMonitor.setMQTTConnected(true);
+  
+  // Update health data
+  healthMonitor.update();
+  
+  // Get health data
+  HealthMonitor::HealthData health = healthMonitor.getData();
+  
+  // Publish JSON status (retained)
+  String jsonStatus = healthMonitor.getStatusJSON();
+  if (!mqttClient.publish(MQTT_TOPIC_HEALTH_STATUS, jsonStatus.c_str(), true)) {
+    healthMonitor.recordMQTTFailure();
+  }
+  mqttClient.loop(); // Flush buffer
+  yield();
+  
+  // Publish individual metrics
+  char buffer[16];
+  
+  // RSSI
+  snprintf(buffer, sizeof(buffer), "%d", health.wifi.rssi);
+  if (!mqttClient.publish(MQTT_TOPIC_HEALTH_RSSI, buffer, true)) {
+    healthMonitor.recordMQTTFailure();
+  }
+  mqttClient.loop();
+  
+  // Heap
+  snprintf(buffer, sizeof(buffer), "%u", health.system.freeHeap);
+  if (!mqttClient.publish(MQTT_TOPIC_HEALTH_HEAP, buffer, true)) {
+    healthMonitor.recordMQTTFailure();
+  }
+  mqttClient.loop();
+  
+  // Uptime
+  snprintf(buffer, sizeof(buffer), "%u", health.system.uptime);
+  if (!mqttClient.publish(MQTT_TOPIC_HEALTH_UPTIME, buffer, false)) {
+    healthMonitor.recordMQTTFailure();
+  }
+  mqttClient.loop();
+  
+  // WiFi Status
+  const char* wifiStatus = health.wifi.connected ? "online" : "offline";
+  if (!mqttClient.publish(MQTT_TOPIC_HEALTH_WIFI, wifiStatus, true)) {
+    healthMonitor.recordMQTTFailure();
+  }
+  mqttClient.loop();
+  
+  // MQTT Status
+  const char* mqttStatus = health.mqtt.connected ? "online" : "offline";
+  if (!mqttClient.publish(MQTT_TOPIC_HEALTH_MQTT, mqttStatus, true)) {
+    healthMonitor.recordMQTTFailure();
+  }
+  mqttClient.loop();
+  
+  // Sensor Type
+  if (!mqttClient.publish(MQTT_TOPIC_HEALTH_SENSOR, health.sensor.type.c_str(), true)) {
+    healthMonitor.recordMQTTFailure();
+  }
+  mqttClient.loop();
+  
+  // MQTT Failures - DON'T record failure here to avoid feedback loop!
+  snprintf(buffer, sizeof(buffer), "%u", health.mqtt.failures);
+  mqttClient.publish(MQTT_TOPIC_HEALTH_MQTT_FAILS, buffer, false);
+  // Note: Intentionally not checking return value to prevent self-reinforcing failure count
+  
+  InfoLogger->printf("Health published: %s\n", healthMonitor.getStatusString().c_str());
+}
+
 void handleMqttConnection() {
   if (mqttClient.connected()){
     mqttClient.loop();
@@ -343,8 +485,11 @@ void handleMqttConnection() {
     if (!discoveryPublished && discoveryPlatform != DISCOVERY_NONE) {
       publishDiscoveryMessages();
       discoveryPublished = true;
+      // Publish initial health status
+      publishHealthMetrics();
     }
   } else{
+    healthMonitor.setMQTTConnected(false);
     discoveryPublished = false; // Reset on disconnect
     unsigned long now = millis();
     if (now - lastMqttAttempt < MQTT_RETRY_INTERVAL) return;
@@ -354,15 +499,25 @@ void handleMqttConnection() {
     char mqttClientName[32];
     snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
     bool connected = false;
+    
+    // Connect with Last Will and Testament (LWT)
+    // If device disconnects unexpectedly, broker will publish "offline" to availability topic
     if (mqtt_user[0] == '\0') {
-      connected = mqttClient.connect(mqttClientName);
+      connected = mqttClient.connect(mqttClientName, MQTT_TOPIC_AVAILABILITY, 1, true, "offline");
     } else {
-      connected = mqttClient.connect(mqttClientName, mqtt_user, mqtt_pass);
+      connected = mqttClient.connect(mqttClientName, mqtt_user, mqtt_pass, MQTT_TOPIC_AVAILABILITY, 1, true, "offline");
     }
     if (connected) {
       InfoLogger->println("MQTT connected");
+      healthMonitor.recordMQTTReconnect();
+      healthMonitor.setMQTTConnected(true);
+      
+      // Publish birth message - device is online
+      mqttClient.publish(MQTT_TOPIC_AVAILABILITY, "online", true);
+      InfoLogger->println("Published availability: online");
     } else {
       InfoLogger->printf("MQTT failed, rc=%d\n", mqttClient.state());
+      healthMonitor.recordMQTTFailure();
     }
   }
 }
@@ -370,50 +525,97 @@ void handleMqttConnection() {
 void myTelnetWelcome(WiFiClient& client) {
     client.println("=== ESP Multi Sensor Configuration ===\r\n");
     
-    // Show current time and uptime
+    // Show current time (NTP sync status)
     time_t now = time(nullptr);
     if (now > 8 * 3600 * 2) {
         client.print("Current time: "); client.print(ctime(&now));
     } else {
-        client.print("NTP time not synced\r\n");
+        client.print("NTP: Not synchronized\r\n");
     }
     
-    unsigned long ms = millis();
-    unsigned long seconds = ms / 1000;
-    unsigned long minutes = seconds / 60;
-    unsigned long hours = minutes / 60;
-    unsigned long days = hours / 24;
-    client.print("\rUptime: ");
-    client.print(days); client.print("d ");
-    client.print(hours % 24); client.print("h ");
-    client.print(minutes % 60); client.print("m ");
-    client.print(seconds % 60); client.print("s\r\n");
-    
-    client.print("Firmware Version: "); client.print(versionStr); client.print("\r\n");
+    client.print("Firmware: "); client.print(versionStr); client.print("\r\n");
     client.print("Device Prefix: "); client.print(device_prefix); client.print("\r\n");
-    client.print("MQTT Server: "); client.print(mqtt_server); client.print("\r\n");
-    client.print("MQTT Port: "); client.print(mqtt_port); client.print("\r\n");
-    client.print("MQTT User: ");
+    
+    // MQTT Configuration
+    client.print("\r\n--- MQTT Configuration ---\r\n");
+    client.print("Server: "); client.print(mqtt_server); client.print(":"); client.print(mqtt_port); client.print("\r\n");
+    client.print("User: ");
     if (mqtt_user[0] == '\0') {
-      client.print("(none - anonymous connection)\r\n");
+      client.print("(anonymous)\r\n");
     } else {
       client.print(mqtt_user); client.print("\r\n");
     }
-    client.print("MQTT Client Name: "); 
     char mqttClientName[32];
     snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
-    client.print(mqttClientName); client.print("\r\n");
-    client.print("MQTT Topics:\r\n  PIR: "); client.print(MQTT_TOPIC_PIR); client.print("\r\n");
+    client.print("Client ID: "); client.print(mqttClientName); client.print("\r\n");
+    
+    // MQTT Topics
+    client.print("Topics:\r\n");
+    client.print("  PIR: "); client.print(MQTT_TOPIC_PIR); client.print("\r\n");
     client.print("  Temp: "); client.print(MQTT_TOPIC_TEMP); client.print("\r\n");
     client.print("  Pressure: "); client.print(MQTT_TOPIC_PRESSURE); client.print("\r\n");
     if (detectedSensor == SENSOR_BME280) {
-      client.print("  Hum: "); client.print(MQTT_TOPIC_BME_hum); client.print("\r\n");
-    } else {
-      client.print("  Hum: N/A\r\n");
+      client.print("  Humidity: "); client.print(MQTT_TOPIC_BME_hum); client.print("\r\n");
     }
-    client.print("PIR Pin: "); client.print(PIR_PIN); client.print("\r\n");
-    client.print("Altitude (m): "); client.print(myAltitude); client.print("\r\n");
-    client.print("Sensor thresholds:\r\n  Temp: "); client.print(TEMP_THRESHOLD); client.print(" °C\r\n  Pressure: "); client.print(PRESSURE_THRESHOLD); client.print(" hPa\r\n");
+    
+    // Sensor Configuration
+    client.print("\r\n--- Sensor Configuration ---\r\n");
+    client.print("PIR Pin: GPIO"); client.print(PIR_PIN); client.print("\r\n");
+    client.print("Altitude: "); client.print(myAltitude); client.print(" m\r\n");
+    client.print("Thresholds: Temp="); client.print(TEMP_THRESHOLD);
+    client.print("°C, Pressure="); client.print(PRESSURE_THRESHOLD); client.print(" hPa\r\n");
+    
+    // Health Status (non-redundant information only)
+    client.print("\r\n--- Health Status ---\r\n");
+    HealthMonitor::HealthData health = healthMonitor.getData();
+    
+    // Overall health
+    client.print("Overall: ");
+    if (health.status == HealthMonitor::HEALTHY) {
+      client.print("[OK] Healthy");
+    } else if (health.status == HealthMonitor::DEGRADED) {
+      client.print("[WARN] Degraded");
+    } else if (health.status == HealthMonitor::CRITICAL) {
+      client.print("[CRIT] Critical");
+    } else {
+      client.print("Unknown");
+    }
+    client.print("\r\n");
+    
+    // WiFi health (unique info: RSSI)
+    client.print("WiFi: ");
+    if (health.wifi.connected) {
+      client.print("Connected ("); client.print(health.wifi.rssi); client.print(" dBm)");
+      if (health.wifi.rssi > -50) client.print(" [Excellent]");
+      else if (health.wifi.rssi > -70) client.print(" [Good]");
+      else if (health.wifi.rssi > -80) client.print(" [Fair]");
+      else client.print(" [Weak]");
+      client.print("\r\n");
+    } else {
+      client.print("Disconnected\r\n");
+    }
+    
+    // MQTT health (unique info: connection state and failures)
+    client.print("MQTT: ");
+    if (health.mqtt.connected) {
+      client.print("Connected");
+      if (health.mqtt.reconnects > 0) {
+        client.print(" ("); client.print(health.mqtt.reconnects); client.print(" reconnects)");
+      }
+    } else {
+      client.print("Disconnected ("); client.print(health.mqtt.failures); client.print(" failures)");
+    }
+    client.print("\r\n");
+    
+    // Sensor health (unique info: operational status and last read timing)
+    client.print("Sensor: "); client.print(health.sensor.type);
+    if (health.sensor.operational) {
+      client.print(" - OK (last read "); client.print(health.sensor.lastReadAge); client.print("s ago)");
+    } else {
+      client.print(" - NOT OPERATIONAL");
+    }
+    client.print("\r\n");
+    
     client.print("======================================\r\n");
 }
 
@@ -459,15 +661,24 @@ void setup() {
   Serial.println("WiFi connected: " + WiFi.localIP().toString());
 
   // --- Read updated config from WiFiManager ---
-  strcpy(device_prefix, custom_device_prefix.getValue());
+  // Read device prefix first and validate
+  const char* newPrefix = custom_device_prefix.getValue();
+  if (newPrefix != NULL && newPrefix[0] != '\0') {
+    strncpy(device_prefix, newPrefix, sizeof(device_prefix) - 1);
+    device_prefix[sizeof(device_prefix) - 1] = '\0'; // Ensure null termination
+  } else {
+    strcpy(device_prefix, DEFAULT_DEVICE_PREFIX); // fallback to default if empty
+  }
+  
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
   strcpy(mqtt_user, custom_mqtt_user.getValue());
   strcpy(mqtt_pass, custom_mqtt_pass.getValue());
-  strcpy(device_prefix, custom_device_prefix.getValue());
-  if (device_prefix[0] == '\0') {
-    strcpy(device_prefix, DEFAULT_DEVICE_PREFIX); // fallback to default if empty
-  }
+
+  // Debug output to verify prefix
+  Serial.print("Using device_prefix: '");
+  Serial.print(device_prefix);
+  Serial.println("'");
 
   // Persist updated configuration
   saveConfig();
@@ -559,6 +770,40 @@ void setup() {
   // keep BME humidity topic (only published when BME present)
   snprintf(MQTT_TOPIC_BME_hum, sizeof(MQTT_TOPIC_BME_hum), "esp/sensor/humidity/%s", device_prefix);
 
+  // Set health monitoring topics
+  snprintf(MQTT_TOPIC_HEALTH_STATUS, sizeof(MQTT_TOPIC_HEALTH_STATUS), "%s/health/status", device_prefix);
+  snprintf(MQTT_TOPIC_HEALTH_RSSI, sizeof(MQTT_TOPIC_HEALTH_RSSI), "%s/health/rssi", device_prefix);
+  snprintf(MQTT_TOPIC_HEALTH_HEAP, sizeof(MQTT_TOPIC_HEALTH_HEAP), "%s/health/heap", device_prefix);
+  snprintf(MQTT_TOPIC_HEALTH_UPTIME, sizeof(MQTT_TOPIC_HEALTH_UPTIME), "%s/health/uptime", device_prefix);
+  snprintf(MQTT_TOPIC_HEALTH_WIFI, sizeof(MQTT_TOPIC_HEALTH_WIFI), "%s/health/wifi", device_prefix);
+  snprintf(MQTT_TOPIC_HEALTH_MQTT, sizeof(MQTT_TOPIC_HEALTH_MQTT), "%s/health/mqtt", device_prefix);
+  snprintf(MQTT_TOPIC_HEALTH_SENSOR, sizeof(MQTT_TOPIC_HEALTH_SENSOR), "%s/health/sensor", device_prefix);
+  snprintf(MQTT_TOPIC_HEALTH_MQTT_FAILS, sizeof(MQTT_TOPIC_HEALTH_MQTT_FAILS), "%s/health/mqtt_fails", device_prefix);
+  snprintf(MQTT_TOPIC_AVAILABILITY, sizeof(MQTT_TOPIC_AVAILABILITY), "%s/availability", device_prefix);
+
+  // Debug: Verify topic initialization
+  InfoLogger->print("Health topics initialized with prefix: ");
+  InfoLogger->println(device_prefix);
+  InfoLogger->print("  Status topic: ");
+  InfoLogger->println(MQTT_TOPIC_HEALTH_STATUS);
+
+  // Initialize Health Monitor
+  healthMonitor.begin(versionStr);
+
+  // Set initial sensor type after sensor detection
+  if (detectedSensor == SENSOR_BME280) {
+    healthMonitor.setSensorType("BME280");
+    healthMonitor.setSensorOperational(true);
+  } else if (detectedSensor == SENSOR_BMP280) {
+    healthMonitor.setSensorType("BMP280");
+    healthMonitor.setSensorOperational(true);
+  } else {
+    healthMonitor.setSensorType("NONE");
+    healthMonitor.setSensorOperational(false);
+  }
+
+  InfoLogger->println("Health monitoring initialized");
+
   EspMultiLogger::setTelnetWelcomeCallback(myTelnetWelcome);
 }
 
@@ -568,6 +813,11 @@ void loop() {
   EspMultiLogger::loopLogger();
 
   handleMqttConnection();
+
+  // Health monitoring check
+  if (healthMonitor.shouldUpdate()) {
+    publishHealthMetrics();
+  }
 
   unsigned long now = millis();
   if (now - lastSensorCheck > Sensor_read_Interval) {
@@ -599,6 +849,11 @@ void loop() {
     // use generic topics for temp/pressure regardless of sensor
     const char* topicTemp = MQTT_TOPIC_TEMP;
     const char* topicPressure = MQTT_TOPIC_PRESSURE;
+
+    // Record successful sensor read for health monitoring
+    if (!isnan(temp) || !isnan(pressure)) {
+      healthMonitor.recordSensorRead();
+    }
 
     // Only publish if value changed beyond threshold
     if (!isnan(temp) && (isnan(lastTemp) || fabs(temp - lastTemp) > TEMP_THRESHOLD)) {
