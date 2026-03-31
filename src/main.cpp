@@ -761,7 +761,7 @@ void setup() {
   snprintf(mqttClientName, sizeof(mqttClientName), "%s_MultiSensor", device_prefix);
   mqttClient.setServer(mqtt_server, atoi(mqtt_port));
   // Store client name for use in mqttReconnect
-  mqttClient.setBufferSize(256); // Optional: increase if needed
+  mqttClient.setBufferSize(512); // Increased for health JSON (~350 bytes worst case)
 
   // Set MQTT topics based on device prefix (generic topics for temp/pressure)
   snprintf(MQTT_TOPIC_PIR, sizeof(MQTT_TOPIC_PIR), "esp/sensor/pir/%s", device_prefix);

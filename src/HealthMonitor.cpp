@@ -120,52 +120,41 @@ HealthMonitor::HealthData HealthMonitor::getData() {
 
 // Generate JSON Status
 String HealthMonitor::getStatusJSON() {
-    String json = "{";
-    
-    // Overall status
-    json += "\"status\":\"" + getStatusString() + "\",";
-    
-    // Add timestamp of this health update
+    // Use char buffer to avoid String fragmentation
+    // Reserve space for worst-case JSON size (~400 bytes)
+    char json[450];
     time_t now = time(nullptr);
-    json += "\"timestamp\":" + String(now) + ",";
-    json += "\"last_update_ms\":" + String(millis()) + ",";
     
-    // WiFi health
-    json += "\"wifi\":{";
-    json += "\"connected\":" + String(_data.wifi.connected ? "true" : "false") + ",";
-    json += "\"rssi\":" + String(_data.wifi.rssi) + ",";
-    json += "\"ip\":\"" + _data.wifi.ip + "\"";
-    json += "},";
+    // Build JSON in one shot using snprintf
+    snprintf(json, sizeof(json),
+        "{\"status\":\"%s\","
+        "\"timestamp\":%ld,"
+        "\"last_update_ms\":%lu,"
+        "\"wifi\":{\"connected\":%s,\"rssi\":%d,\"ip\":\"%s\"},"
+        "\"mqtt\":{\"connected\":%s,\"failures\":%u,\"reconnects\":%u},"
+        "\"system\":{\"uptime\":%u,\"heap\":%u,\"version\":\"%s\"},"
+        "\"sensor\":{\"type\":\"%s\",\"operational\":%s,\"last_read\":%u},"
+        "\"ntp\":{\"synced\":%s,\"timestamp\":%ld}}",
+        getStatusString().c_str(),
+        (long)now,
+        millis(),
+        _data.wifi.connected ? "true" : "false",
+        _data.wifi.rssi,
+        _data.wifi.ip.c_str(),
+        _data.mqtt.connected ? "true" : "false",
+        _data.mqtt.failures,
+        _data.mqtt.reconnects,
+        _data.system.uptime,
+        _data.system.freeHeap,
+        _data.system.version.c_str(),
+        _data.sensor.type.c_str(),
+        _data.sensor.operational ? "true" : "false",
+        _data.sensor.lastReadAge,
+        _data.ntp.synced ? "true" : "false",
+        (long)_data.ntp.timestamp
+    );
     
-    // MQTT health
-    json += "\"mqtt\":{";
-    json += "\"connected\":" + String(_data.mqtt.connected ? "true" : "false") + ",";
-    json += "\"failures\":" + String(_data.mqtt.failures) + ",";
-    json += "\"reconnects\":" + String(_data.mqtt.reconnects);
-    json += "},";
-    
-    // System health
-    json += "\"system\":{";
-    json += "\"uptime\":" + String(_data.system.uptime) + ",";
-    json += "\"heap\":" + String(_data.system.freeHeap) + ",";
-    json += "\"version\":\"" + _data.system.version + "\"";
-    json += "},";
-    
-    // Sensor health
-    json += "\"sensor\":{";
-    json += "\"type\":\"" + _data.sensor.type + "\",";
-    json += "\"operational\":" + String(_data.sensor.operational ? "true" : "false") + ",";
-    json += "\"last_read\":" + String(_data.sensor.lastReadAge);
-    json += "},";
-    
-    // NTP health
-    json += "\"ntp\":{";
-    json += "\"synced\":" + String(_data.ntp.synced ? "true" : "false") + ",";
-    json += "\"timestamp\":" + String(_data.ntp.timestamp);
-    json += "}";
-    
-    json += "}";
-    return json;
+    return String(json);
 }
 
 // Event Recording
